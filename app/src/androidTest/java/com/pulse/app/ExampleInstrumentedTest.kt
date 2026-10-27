@@ -3,6 +3,7 @@ package com.pulse.app
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.pulse.app.health.permission.HealthPermissionState
 import com.pulse.app.ui.theme.PulseTheme
 import org.junit.Rule
 import org.junit.Test
@@ -15,13 +16,17 @@ class ExampleInstrumentedTest {
     val composeTestRule = createComposeRule()
 
     @Test
-    fun greetingIsDisplayed() {
+    fun permissionScreenDeniedState_isDisplayed() {
         composeTestRule.setContent {
             PulseTheme {
-                Greeting("Pulse")
+                PermissionScreen(
+                    state = HealthPermissionState.Denied,
+                    onRequestPermission = {},
+                    onRefresh = {},
+                )
             }
         }
 
-        composeTestRule.onNodeWithText("Hello Pulse!").assertExists()
+        composeTestRule.onNodeWithText("Grant permissions").assertExists()
     }
 }

@@ -3,6 +3,7 @@ package com.pulse.app
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.launch
 import androidx.activity.viewModels
 import androidx.compose.foundation.layout.Arrangement
@@ -37,13 +38,15 @@ class MainActivity : ComponentActivity() {
         HealthPermissionViewModelFactory(permissionManager)
     }
 
-    private val permissionLauncher = registerForActivityResult(
-        permissionManager.requestContract,
-    ) { granted ->
-        viewModel.onPermissionResult(granted)
-    }
+    private lateinit var permissionLauncher: ActivityResultLauncher<Unit>
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        permissionLauncher = registerForActivityResult(
+            permissionManager.requestContract,
+        ) { granted ->
+            viewModel.onPermissionResult(granted)
+        }
+
         super.onCreate(savedInstanceState)
         setContent {
             PulseTheme {
@@ -65,7 +68,7 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-private fun PermissionScreen(
+internal fun PermissionScreen(
     state: HealthPermissionState,
     onRequestPermission: () -> Unit,
     onRefresh: () -> Unit,
