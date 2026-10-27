@@ -11,8 +11,9 @@ The widget is the main product. The companion app is kept minimal and is mostly 
 
 ### Requirements
 - JDK 21
-- Android SDK 35
-- Gradle 8.13 (wrapper included)
+- Android SDK 35 (compileSdk)
+- Gradle 9.6.0 (wrapper included)
+- Kotlin 2.2.10
 
 ### Build
 ```bash
