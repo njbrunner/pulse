@@ -10,8 +10,8 @@ The widget is the main product. The companion app is kept minimal and is mostly 
 
 ### Requirements
 - JDK 21
-- Android SDK 34
-- Gradle 8.9 (wrapper included)
+- Android SDK 35
+- Gradle 8.13 (wrapper included)
 
 ### Build
 ```bash
@@ -59,7 +59,7 @@ Pulse calculates its own Sleep and Recovery scores. These are **not** official G
 |------------|--------|
 | Duration   | 60%    |
 | Efficiency | 25%    |
-| Continuity | 15%   |
+| Continuity | 15%    |
 
 **Pulse Recovery Score (0–100)**
 
