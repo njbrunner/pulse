@@ -23,23 +23,6 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v4
 
-      - name: Create Gradle Wrapper
-        run: |
-          mkdir -p gradle/wrapper
-          curl -L -o gradle/wrapper/gradle-wrapper.jar https://github.com/gradle/gradle/raw/v8.9.0/gradle/wrapper/gradle-wrapper.jar
-          echo 'distributionBase=GRADLE_USER_HOME
-distributionPath=wrapper/dists
-distributionUrl=https\://services.gradle.org/distributions/gradle-8.9-bin.zip
-networkTimeout=10000
-validateDistributionUrl=true
-zipStoreBase=GRADLE_USER_HOME
-zipStorePath=wrapper/dists' > gradle/wrapper/gradle-wrapper.properties
-
-      - name: Create Gradlew
-        run: |
-          curl -L -o gradlew https://raw.githubusercontent.com/gradle/gradle/v8.9.0/gradlew
-          chmod +x gradlew
-
       - name: Build with Gradle
         run: ./gradlew assembleDebug
 
