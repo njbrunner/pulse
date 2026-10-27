@@ -59,7 +59,7 @@ Pulse calculates its own Sleep and Recovery scores. These are **not** official G
 |------------|--------|
 | Duration   | 60%    |
 | Efficiency | 25%    |
-| Continuity | 15%    |
+| Continuity | 15%   |
 
 **Pulse Recovery Score (0–100)**
 
