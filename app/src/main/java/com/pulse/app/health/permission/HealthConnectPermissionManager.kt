@@ -2,6 +2,7 @@ package com.pulse.app.health.permission
 
 import android.content.Context
 import android.content.Intent
+import android.util.Log
 import androidx.activity.result.contract.ActivityResultContract
 import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.PermissionController
@@ -20,10 +21,20 @@ class HealthConnectPermissionManager(
     private val healthConnectClient: HealthConnectClient? = null,
 ) : HealthPermissionManager {
 
+    companion object {
+        private const val TAG = "HealthConnectPermissionManager"
+    }
+
     private val client: HealthConnectClient? by lazy {
-        healthConnectClient ?: when (HealthConnectClient.getSdkStatus(applicationContext)) {
-            HealthConnectClient.SDK_AVAILABLE -> HealthConnectClient.getOrCreate(applicationContext)
-            else -> null
+        healthConnectClient ?: when (val status = HealthConnectClient.getSdkStatus(applicationContext)) {
+            HealthConnectClient.SDK_AVAILABLE -> {
+                Log.d(TAG, "Health Connect SDK available")
+                HealthConnectClient.getOrCreate(applicationContext)
+            }
+            else -> {
+                Log.w(TAG, "Health Connect SDK unavailable: $status")
+                null
+            }
         }
     }
 
@@ -51,7 +62,9 @@ class HealthConnectPermissionManager(
         val granted = currentClient.permissionController.getGrantedPermissions()
             .mapNotNull(::toPulsePermission)
             .toSet()
-        return resolveState(granted)
+        val state = resolveState(granted)
+        Log.d(TAG, "Checked permissions: granted=$granted, state=$state")
+        return state
     }
 
     private fun toHealthPermission(permission: PulseHealthPermission): String {

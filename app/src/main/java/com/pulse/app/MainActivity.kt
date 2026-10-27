@@ -1,6 +1,7 @@
 package com.pulse.app
 
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.ActivityResultLauncher
@@ -44,6 +45,7 @@ class MainActivity : ComponentActivity() {
         permissionLauncher = registerForActivityResult(
             permissionManager.requestContract,
         ) { granted ->
+            Log.d(TAG, "Permission request result: $granted")
             viewModel.onPermissionResult(granted)
         }
 
@@ -58,12 +60,19 @@ class MainActivity : ComponentActivity() {
 
                     PermissionScreen(
                         state = state,
-                        onRequestPermission = { permissionLauncher.launch() },
+                        onRequestPermission = {
+                            Log.d(TAG, "Launching Health Connect permission request")
+                            permissionLauncher.launch()
+                        },
                         onRefresh = { viewModel.refreshPermissionState() },
                     )
                 }
             }
         }
+    }
+
+    companion object {
+        private const val TAG = "MainActivity"
     }
 }
 
@@ -103,7 +112,10 @@ internal fun PermissionScreen(
             style = MaterialTheme.typography.bodyLarge,
         )
 
-        if (state !is HealthPermissionState.Loading && state !is HealthPermissionState.Granted) {
+        val canRequestPermissions = state is HealthPermissionState.Denied ||
+            state is HealthPermissionState.PartiallyGranted
+
+        if (canRequestPermissions) {
             Button(
                 onClick = onRequestPermission,
                 modifier = Modifier.padding(top = 24.dp),

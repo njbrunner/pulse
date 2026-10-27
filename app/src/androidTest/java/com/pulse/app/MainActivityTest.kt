@@ -14,7 +14,7 @@ class MainActivityTest {
     val composeTestRule = createAndroidComposeRule<MainActivity>()
 
     @Test
-    fun launchMainActivity_doesNotCrashAndDisplaysPermissionScreen() {
-        composeTestRule.onNodeWithText("Grant permissions").assertExists()
+    fun launchMainActivity_doesNotCrashAndDisplaysAppName() {
+        composeTestRule.onNodeWithText("Pulse").assertExists()
     }
 }
