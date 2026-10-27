@@ -1,4 +1,5 @@
-# Pulse
+# Pulse 
+[![CI](https://github.com/njbrunner/pulse/actions/workflows/ci.yml/badge.svg)](https://github.com/njbrunner/pulse/actions/workflows/ci.yml)
 
 Pulse is an Android app that gives you a simple, at-a-glance view of your personal health data from a home-screen widget.
 
