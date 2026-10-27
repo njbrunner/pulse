@@ -6,6 +6,9 @@ opencode.json
 build/
 !gradle/wrapper/gradle-wrapper.jar
 
+# Kotlin
+.kotlin/
+
 # Android Studio / IntelliJ
 .idea/
 *.iml

@@ -6,6 +6,28 @@ The widget is the main product. The companion app is kept minimal and is mostly 
 
 > **Status:** Early development. The v0.1 MVP is tracked in the [`v0.1 - MVP`](https://github.com/njbrunner/pulse/milestone/1) milestone.
 
+## Development
+
+### Requirements
+- JDK 21
+- Android SDK 35
+- Gradle 8.13 (wrapper included)
+
+### Build
+```bash
+./gradlew assembleDebug
+```
+
+### Test
+```bash
+./gradlew test
+```
+
+### Lint
+```bash
+./gradlew lint
+```
+
 ## Widget
 
 ### Daily view
