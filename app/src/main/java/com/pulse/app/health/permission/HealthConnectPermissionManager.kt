@@ -92,6 +92,7 @@ class HealthConnectPermissionManager(
         private val delegate = PermissionController.createRequestPermissionResultContract()
 
         override fun createIntent(context: Context, input: Unit): Intent {
+            Log.d(TAG, "Creating Health Connect permission intent for: $requiredHealthPermissions")
             return delegate.createIntent(context, requiredHealthPermissions)
         }
 
