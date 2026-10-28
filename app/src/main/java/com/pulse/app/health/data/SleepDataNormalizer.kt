@@ -10,9 +10,10 @@ import java.time.ZoneId
  * Normalizes Google Health Connect [SleepSessionRecord]s into application-level
  * [SleepSummary] models.
  *
- * A session is attributed to the calendar day that contains its midpoint, which
- * consistently handles sessions that cross midnight (e.g. a session from 23:00 to
- * 07:00 is attributed to the day containing 03:00).
+ * A session is attributed to the calendar day that contains its midpoint. For a
+ * normal overnight session this is the wake/end date (e.g. a session from 23:00
+ * to 07:00 is attributed to the day containing 03:00, which is the wake date).
+ * This consistently handles sessions that cross midnight.
  *
  * When stage data is unavailable, the session duration is used as the sleep
  * duration and efficiency/continuity are left null.

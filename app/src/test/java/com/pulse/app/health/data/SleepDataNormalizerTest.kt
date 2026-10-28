@@ -36,7 +36,7 @@ class SleepDataNormalizerTest {
     }
 
     @Test
-    fun sessionCrossingMidnight_isAttributedToMidpointDay() {
+    fun sessionCrossingMidnight_isAttributedToWakeDate() {
         val previousDay = date.minusDays(1)
         val start = previousDay.atTime(23, 0).toInstant(zoneOffset)
         val end = date.atTime(7, 0).toInstant(zoneOffset)
@@ -51,6 +51,69 @@ class SleepDataNormalizerTest {
         assertEquals(1, result.size)
         assertEquals(date, result[0].date)
         assertEquals(Duration.ofHours(8), result[0].duration)
+    }
+
+    @Test
+    fun sessionSpanningMidnightBoundary_isAttributedToWakeDate() {
+        val previousDay = date.minusDays(1)
+        val start = previousDay.atTime(23, 59).toInstant(zoneOffset)
+        val end = date.atTime(0, 1).toInstant(zoneOffset)
+        val session = sleepSession(
+            start = start,
+            end = end,
+            stages = listOf(sleepStage(start, end)),
+        )
+
+        val result = SleepDataNormalizer.normalize(listOf(session), zoneOffset)
+
+        assertEquals(1, result.size)
+        assertEquals(date, result[0].date)
+        assertEquals(Duration.ofMinutes(2), result[0].duration)
+    }
+
+    @Test
+    fun multipleOvernightSessions_areAttributedToTheirWakeDates() {
+        val day1 = date.minusDays(1)
+        val day2 = date
+        val session1Start = day1.atTime(23, 0).toInstant(zoneOffset)
+        val session1End = day2.atTime(7, 0).toInstant(zoneOffset)
+        val session1 = sleepSession(
+            start = session1Start,
+            end = session1End,
+            stages = listOf(sleepStage(session1Start, session1End)),
+        )
+        val session2Start = day2.atTime(23, 0).toInstant(zoneOffset)
+        val session2End = day2.plusDays(1).atTime(7, 0).toInstant(zoneOffset)
+        val session2 = sleepSession(
+            start = session2Start,
+            end = session2End,
+            stages = listOf(sleepStage(session2Start, session2End)),
+        )
+
+        val result = SleepDataNormalizer.normalize(listOf(session2, session1), zoneOffset)
+
+        assertEquals(2, result.size)
+        assertEquals(day2, result[0].date)
+        assertEquals(day2.plusDays(1), result[1].date)
+        assertEquals(Duration.ofHours(8), result[0].duration)
+        assertEquals(Duration.ofHours(8), result[1].duration)
+    }
+
+    @Test
+    fun eveningNapBeforeMidnight_isAttributedToSameDay() {
+        val start = date.atTime(20, 0).toInstant(zoneOffset)
+        val end = date.atTime(22, 0).toInstant(zoneOffset)
+        val session = sleepSession(
+            start = start,
+            end = end,
+            stages = listOf(sleepStage(start, end)),
+        )
+
+        val result = SleepDataNormalizer.normalize(listOf(session), zoneOffset)
+
+        assertEquals(1, result.size)
+        assertEquals(date, result[0].date)
+        assertEquals(Duration.ofHours(2), result[0].duration)
     }
 
     @Test

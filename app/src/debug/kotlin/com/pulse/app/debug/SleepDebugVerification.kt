@@ -27,9 +27,10 @@ internal object SleepDebugVerification {
             val cache = RoomHealthDataCache(context)
             val repository = HealthConnectDataRepository(context, cache)
 
-            // Use yesterday because the most recent complete sleep session is usually
-            // attributed to the previous calendar day.
-            val date = LocalDate.now().minusDays(1)
+            // Request today's attributed sleep. For an overnight session this is the
+            // calendar day containing the session midpoint, which is normally the wake
+            // date (e.g. Oct 27 evening -> Oct 28 morning is attributed to Oct 28).
+            val date = LocalDate.now()
             Log.i(TAG, "Triggering debug sleep read for date=$date")
 
             when (val result = repository.readSleep(date)) {
