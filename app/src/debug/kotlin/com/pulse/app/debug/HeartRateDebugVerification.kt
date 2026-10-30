@@ -14,6 +14,7 @@ import com.pulse.app.health.data.HealthDataResult
 import com.pulse.app.health.data.cache.RoomHealthDataCache
 import com.pulse.app.health.data.model.SleepSummary
 import kotlinx.coroutines.launch
+import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -35,6 +36,12 @@ import java.util.Locale
 internal object HeartRateDebugVerification {
 
     private const val TAG = "PulseHeartDebug"
+
+    // Health Connect documents HeartRateRecord.Sample.beatsPerMinute as having a
+    // valid range of 1-300 BPM. Values outside this range are treated as invalid
+    // and excluded from Pulse RHR candidate calculations.
+    private const val MIN_VALID_BPM = 1L
+    private const val MAX_VALID_BPM = 300L
 
     fun trigger(activity: ComponentActivity) {
         activity.lifecycleScope.launch {
@@ -84,7 +91,7 @@ internal object HeartRateDebugVerification {
             logSleepPrimaryIntervals(sleepSummaries)
 
             logRawRestingHeartRate(client, timeRangeFilter, zoneId)
-            logRawHeartRate(client, timeRangeFilter, sleepSummaries, rangeStart, today)
+            logRawHeartRate(client, timeRangeFilter, sleepSummaries, rangeStart, today, zoneId)
             logRawHeartRateVariability(client, timeRangeFilter, zoneId)
 
             verifyRestingHeartRate(repository, today, rangeStart)
@@ -130,24 +137,14 @@ internal object HeartRateDebugVerification {
             }
 
             val byDate = records.groupBy { it.time.atZone(it.zoneOffset ?: zoneId).toLocalDate() }
+            val origins = records.map { it.metadata.dataOrigin.packageName }.distinct().sorted()
+            Log.i(TAG, "Data origins: $origins")
+
             byDate.toSortedMap().forEach { (date, dayRecords) ->
-                Log.i(TAG, "Date $date: ${dayRecords.size} RestingHeartRateRecord(s)")
-                dayRecords.forEachIndexed { index, record ->
-                    Log.i(
-                        TAG,
-                        "  [$index] time=${record.time} " +
-                            "zoneOffset=${record.zoneOffset} " +
-                            "bpm=${record.beatsPerMinute} " +
-                            "origin=${record.metadata.dataOrigin.packageName} " +
-                            "deviceType=${record.metadata.device?.type}",
-                    )
-                }
                 val averageBpm = dayRecords.sumOf { it.beatsPerMinute }.toDouble() / dayRecords.size
                 Log.i(
                     TAG,
-                    "  -> All ${dayRecords.size} record(s) contribute to normalized value (average=${
-                        String.format(Locale.US, "%.1f", averageBpm)
-                    })",
+                    "Date $date: count=${dayRecords.size} average=${formatOneDecimal(averageBpm)}",
                 )
             }
         } catch (e: SecurityException) {
@@ -163,6 +160,7 @@ internal object HeartRateDebugVerification {
         sleepSummaries: List<SleepSummary>,
         rangeStart: LocalDate,
         today: LocalDate,
+        zoneId: ZoneId,
     ) {
         Log.i(TAG, "=== Raw HeartRateRecord query (investigate RHR source) ===")
 
@@ -202,13 +200,22 @@ internal object HeartRateDebugVerification {
                 }
             }
 
-            val earliest = samples.minByOrNull { it.time }?.time
-            val latest = samples.maxByOrNull { it.time }?.time
-            val origins = samples.map { it.origin }.distinct().sorted()
+            val validSamples = samples.filter { it.bpm in MIN_VALID_BPM..MAX_VALID_BPM }
+            if (validSamples.size < samples.size) {
+                Log.i(
+                    TAG,
+                    "Excluded ${samples.size - validSamples.size} sample(s) outside valid BPM range " +
+                        "[$MIN_VALID_BPM, $MAX_VALID_BPM]",
+                )
+            }
+
+            val earliest = validSamples.minByOrNull { it.time }?.time
+            val latest = validSamples.maxByOrNull { it.time }?.time
+            val origins = validSamples.map { it.origin }.distinct().sorted()
 
             Log.i(
                 TAG,
-                "Total individual heart-rate samples: ${samples.size}, " +
+                "Total individual heart-rate samples: ${validSamples.size}, " +
                     "earliest=$earliest latest=$latest origins=$origins",
             )
 
@@ -216,7 +223,8 @@ internal object HeartRateDebugVerification {
                 requestedRangeStart = rangeStart,
                 requestedRangeEnd = today,
                 sleepSummaries = sleepSummaries,
-                samples = samples,
+                samples = validSamples,
+                zoneId = zoneId,
             )
         } catch (e: SecurityException) {
             Log.i(TAG, "HeartRateRecord query failed: SecurityException / permission denied")
@@ -230,6 +238,7 @@ internal object HeartRateDebugVerification {
         requestedRangeEnd: LocalDate,
         sleepSummaries: List<SleepSummary>,
         samples: List<HeartRateSample>,
+        zoneId: ZoneId,
     ) {
         Log.i(TAG, "=== Sleep-period HR candidate statistics (debug only) ===")
 
@@ -250,8 +259,7 @@ internal object HeartRateDebugVerification {
             if (sleepStart == null || sleepEnd == null) {
                 Log.i(
                     TAG,
-                    "Date $date: No primary sleep session; " +
-                        "no sleep-period RHR candidate statistics available",
+                    "Date $date: No primary sleep session; Pulse RHR cannot be calculated",
                 )
                 date = date.plusDays(1)
                 continue
@@ -262,8 +270,8 @@ internal object HeartRateDebugVerification {
             if (sleepSamples.isEmpty()) {
                 Log.i(
                     TAG,
-                    "Date $date: sleepStart=$sleepStart sleepEnd=$sleepEnd " +
-                        "samples=0 (no HR samples during primary sleep interval)",
+                    "Date $date: No HR samples during primary sleep interval; " +
+                        "Pulse RHR cannot be calculated",
                 )
                 date = date.plusDays(1)
                 continue
@@ -273,27 +281,36 @@ internal object HeartRateDebugVerification {
             val min = bpms.minOrNull() ?: error("non-empty list has no minimum")
             val mean = bpms.average()
             val median = percentile(bpms, 50.0)
+            val p1 = percentile(bpms, 1.0)
+            val p2 = percentile(bpms, 2.0)
+            val p3 = percentile(bpms, 3.0)
             val p5 = percentile(bpms, 5.0)
-            val p10 = percentile(bpms, 10.0)
-            val p15 = percentile(bpms, 15.0)
-            val p20 = percentile(bpms, 20.0)
+
+            val fiveMinuteWindow = Duration.ofMinutes(5)
+            val tenMinuteWindow = Duration.ofMinutes(10)
+            val low5m = findLowestWindowMean(
+                sleepSamples,
+                fiveMinuteWindow,
+                minimumSamplesForWindow(fiveMinuteWindow),
+            )
+            val low10m = findLowestWindowMean(
+                sleepSamples,
+                tenMinuteWindow,
+                minimumSamplesForWindow(tenMinuteWindow),
+            )
+
+            val low5mText = low5m?.let { formatWindow(it, zoneId) } ?: "none"
+            val low10mText = low10m?.let { formatWindow(it, zoneId) } ?: "none"
 
             Log.i(
                 TAG,
-                "Date $date: sleepStart=$sleepStart sleepEnd=$sleepEnd " +
-                    "samples=${bpms.size} min=${min} mean=${
-                        String.format(Locale.US, "%.1f", mean)
-                    } median=${
-                        String.format(Locale.US, "%.1f", median)
-                    } p5=${
-                        String.format(Locale.US, "%.1f", p5)
-                    } p10=${
-                        String.format(Locale.US, "%.1f", p10)
-                    } p15=${
-                        String.format(Locale.US, "%.1f", p15)
-                    } p20=${
-                        String.format(Locale.US, "%.1f", p20)
-                    }",
+                "Date $date: samples=${bpms.size} min=$min mean=${
+                    formatOneDecimal(mean)
+                } median=${formatOneDecimal(median)} p1=${
+                    formatOneDecimal(p1)
+                } p2=${formatOneDecimal(p2)} p3=${
+                    formatOneDecimal(p3)
+                } p5=${formatOneDecimal(p5)} low5m=$low5mText low10m=$low10mText",
             )
 
             date = date.plusDays(1)
@@ -304,6 +321,13 @@ internal object HeartRateDebugVerification {
             TAG,
             "Dates with primary sleep sessions in requested range: $datesWithSleep / $requestedDays",
         )
+    }
+
+    private fun minimumSamplesForWindow(windowDuration: Duration): Int {
+        // Require at least one sample per minute of window length, with a floor of 3,
+        // so a nearly empty window cannot produce an artificially low mean. This is a
+        // coverage guard, not a physiological threshold.
+        return maxOf(3, windowDuration.toMinutes().toInt())
     }
 
     private suspend fun logRawHeartRateVariability(
@@ -328,24 +352,14 @@ internal object HeartRateDebugVerification {
             }
 
             val byDate = records.groupBy { it.time.atZone(it.zoneOffset ?: zoneId).toLocalDate() }
+            val origins = records.map { it.metadata.dataOrigin.packageName }.distinct().sorted()
+            Log.i(TAG, "Data origins: $origins")
+
             byDate.toSortedMap().forEach { (date, dayRecords) ->
-                Log.i(TAG, "Date $date: ${dayRecords.size} HeartRateVariabilityRmssdRecord(s)")
-                dayRecords.forEachIndexed { index, record ->
-                    Log.i(
-                        TAG,
-                        "  [$index] time=${record.time} " +
-                            "zoneOffset=${record.zoneOffset} " +
-                            "ms=${record.heartRateVariabilityMillis} " +
-                            "origin=${record.metadata.dataOrigin.packageName} " +
-                            "deviceType=${record.metadata.device?.type}",
-                    )
-                }
-                val averageMs = dayRecords.sumOf { it.heartRateVariabilityMillis } / dayRecords.size
+                val averageMs = dayRecords.sumOf { it.heartRateVariabilityMillis }.toDouble() / dayRecords.size
                 Log.i(
                     TAG,
-                    "  -> All ${dayRecords.size} record(s) contribute to normalized value (average=${
-                        String.format(Locale.US, "%.1f", averageMs)
-                    })",
+                    "Date $date: count=${dayRecords.size} average=${formatOneDecimal(averageMs)}",
                 )
             }
         } catch (e: SecurityException) {
@@ -448,34 +462,7 @@ internal object HeartRateDebugVerification {
         )
     }
 
-    private data class HeartRateSample(
-        val time: Instant,
-        val bpm: Long,
-        val origin: String,
-    )
-
-    /**
-     * Returns the p-th percentile of [values] using linear interpolation between
-     * the closest ranks (Excel PERCENTILE.INC / NumPy default "linear" method).
-     *
-     * The list is sorted in ascending order. For a percentile p in [0, 100]:
-     *   rank = (p / 100) * (n - 1)
-     *   lower = floor(rank), upper = ceil(rank)
-     *   result = sorted[lower] + (rank - lower) * (sorted[upper] - sorted[lower])
-     *
-     * @param values the sample values; must not be empty
-     * @param percentile the percentile to compute, in the range [0.0, 100.0]
-     */
-    private fun percentile(values: List<Long>, percentile: Double): Double {
-        require(values.isNotEmpty()) { "Cannot compute percentile of an empty list" }
-        require(percentile in 0.0..100.0) { "Percentile must be in [0.0, 100.0]" }
-
-        val sorted = values.sorted()
-        val rank = percentile / 100.0 * (sorted.size - 1)
-        val lowerIndex = kotlin.math.floor(rank).toInt()
-        val upperIndex = kotlin.math.ceil(rank).toInt()
-        val lowerValue = sorted[lowerIndex].toDouble()
-        val upperValue = sorted[upperIndex].toDouble()
-        return lowerValue + (rank - lowerIndex) * (upperValue - lowerValue)
+    private fun formatOneDecimal(value: Double): String {
+        return String.format(Locale.US, "%.1f", value)
     }
 }
