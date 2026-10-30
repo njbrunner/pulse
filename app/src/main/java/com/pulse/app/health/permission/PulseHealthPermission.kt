@@ -7,6 +7,7 @@ package com.pulse.app.health.permission
 enum class PulseHealthPermission {
     SLEEP,
     STEPS,
+    HEART_RATE,
     RESTING_HEART_RATE,
     HRV,
     HYDRATION,

@@ -4,6 +4,7 @@ import androidx.health.connect.client.records.HeartRateVariabilityRmssdRecord
 import androidx.health.connect.client.records.RestingHeartRateRecord
 import com.pulse.app.health.data.model.HeartRateVariability
 import com.pulse.app.health.data.model.RestingHeartRate
+import com.pulse.app.health.data.model.SleepSummary
 import java.time.LocalDate
 import java.time.ZoneId
 import kotlin.math.roundToInt
@@ -12,9 +13,14 @@ import kotlin.math.roundToInt
  * Normalizes Google Health Connect heart rate records into application-level
  * [RestingHeartRate] and [HeartRateVariability] models.
  *
- * Records are grouped by the calendar day on which they occurred. When more than
- * one record exists for a day, the values are averaged. Days with no records are
- * omitted, so missing data is represented as unavailable rather than zero.
+ * [normalizeRestingHeartRate] groups records by the calendar day on which they
+ * occurred and averages values when multiple records exist for the same day.
+ *
+ * [normalizeHeartRateVariability] attributes HRV to the wake date of the primary
+ * overnight sleep session. It averages only the RMSSD records whose timestamps
+ * fall within the primary sleep session interval. This matches how Fitbit/Google
+ * Health define daily HRV rather than averaging every sample that occurs on a
+ * calendar date.
  */
 internal object HeartRateDataNormalizer {
 
@@ -35,17 +41,33 @@ internal object HeartRateDataNormalizer {
 
     fun normalizeHeartRateVariability(
         records: List<HeartRateVariabilityRmssdRecord>,
-        zoneId: ZoneId = ZoneId.systemDefault(),
+        sleepSummaries: List<SleepSummary>,
     ): List<HeartRateVariability> {
-        return records
-            .groupBy { it.toLocalDate(zoneId) }
-            .map { (date, dayRecords) ->
-                HeartRateVariability(
-                    date = date,
-                    ms = averageMs(dayRecords),
-                )
-            }
+        if (records.isEmpty() || sleepSummaries.isEmpty()) {
+            return emptyList()
+        }
+
+        return sleepSummaries
+            .mapNotNull { sleep -> normalizeHrvForSleep(records, sleep) }
             .sortedBy { it.date }
+    }
+
+    private fun normalizeHrvForSleep(
+        records: List<HeartRateVariabilityRmssdRecord>,
+        sleep: SleepSummary,
+    ): HeartRateVariability? {
+        val start = sleep.primarySessionStart ?: return null
+        val end = sleep.primarySessionEnd ?: return null
+
+        val sleepRecords = records.filter { it.time in start..end }
+        if (sleepRecords.isEmpty()) {
+            return null
+        }
+
+        return HeartRateVariability(
+            date = sleep.date,
+            ms = averageMs(sleepRecords),
+        )
     }
 
     private fun averageBpm(records: List<RestingHeartRateRecord>): Int {
@@ -59,10 +81,6 @@ internal object HeartRateDataNormalizer {
     }
 
     private fun RestingHeartRateRecord.toLocalDate(zoneId: ZoneId): LocalDate {
-        return time.atZone(zoneOffset ?: zoneId).toLocalDate()
-    }
-
-    private fun HeartRateVariabilityRmssdRecord.toLocalDate(zoneId: ZoneId): LocalDate {
         return time.atZone(zoneOffset ?: zoneId).toLocalDate()
     }
 }

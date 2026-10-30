@@ -10,6 +10,7 @@ class FakeHealthPermissionManager(
     override val requiredPermissions: Set<PulseHealthPermission> = setOf(
         PulseHealthPermission.SLEEP,
         PulseHealthPermission.STEPS,
+        PulseHealthPermission.HEART_RATE,
         PulseHealthPermission.RESTING_HEART_RATE,
         PulseHealthPermission.HRV,
         PulseHealthPermission.HYDRATION,

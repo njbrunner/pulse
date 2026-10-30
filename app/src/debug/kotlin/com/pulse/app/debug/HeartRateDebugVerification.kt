@@ -12,6 +12,7 @@ import androidx.lifecycle.lifecycleScope
 import com.pulse.app.health.data.HealthConnectDataRepository
 import com.pulse.app.health.data.HealthDataResult
 import com.pulse.app.health.data.cache.RoomHealthDataCache
+import com.pulse.app.health.data.model.SleepSummary
 import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.LocalDate
@@ -59,12 +60,46 @@ internal object HeartRateDebugVerification {
                 "Triggering debug heart-rate verification: today=$today, range=$rangeStart..$today",
             )
 
+            val sleepSummaries = when (
+                val sleepResult = repository.readSleepRange(rangeStart, today)
+            ) {
+                is HealthDataResult.Success -> sleepResult.data
+                is HealthDataResult.PermissionDenied -> {
+                    Log.i(TAG, "Sleep permission denied; skipping sleep-dependent diagnostics")
+                    emptyList()
+                }
+
+                is HealthDataResult.Failure -> {
+                    logFailure("Sleep query", sleepResult.error)
+                    emptyList()
+                }
+
+                is HealthDataResult.Unavailable -> emptyList()
+            }
+            logSleepPrimaryIntervals(sleepSummaries)
+
             logRawRestingHeartRate(client, timeRangeFilter, zoneId)
-            logRawHeartRate(client, timeRangeFilter, zoneId)
+            logRawHeartRate(client, timeRangeFilter, zoneId, sleepSummaries)
             logRawHeartRateVariability(client, timeRangeFilter, zoneId)
 
             verifyRestingHeartRate(repository, today, rangeStart)
             verifyHeartRateVariability(repository, today, rangeStart)
+        }
+    }
+
+    private fun logSleepPrimaryIntervals(sleepSummaries: List<SleepSummary>) {
+        Log.i(TAG, "=== Primary sleep intervals used for HRV/RHR investigation ===")
+        if (sleepSummaries.isEmpty()) {
+            Log.i(TAG, "No sleep data available for the range.")
+            return
+        }
+        sleepSummaries.forEach { sleep ->
+            Log.i(
+                TAG,
+                "Date ${sleep.date}: start=${sleep.primarySessionStart} " +
+                    "end=${sleep.primarySessionEnd} " +
+                    "duration=${sleep.duration}",
+            )
         }
     }
 
@@ -121,6 +156,7 @@ internal object HeartRateDebugVerification {
         client: HealthConnectClient,
         timeRangeFilter: TimeRangeFilter,
         zoneId: ZoneId,
+        sleepSummaries: List<SleepSummary>,
     ) {
         Log.i(TAG, "=== Raw HeartRateRecord query (investigate RHR source) ===")
 
@@ -153,6 +189,7 @@ internal object HeartRateDebugVerification {
                     Triple(sample.time, sample.beatsPerMinute, record.metadata.dataOrigin.packageName)
                 }
             }
+            val sleepByDate = sleepSummaries.associateBy { it.date }
             val byDate = samples.groupBy { it.first.atZone(zoneId).toLocalDate() }
             byDate.toSortedMap().forEach { (date, daySamples) ->
                 val bpms = daySamples.map { it.second }
@@ -167,6 +204,30 @@ internal object HeartRateDebugVerification {
                             String.format(Locale.US, "%.1f", avg)
                         } values=[$preview${if (daySamples.size > 10) ", ..." else ""}]",
                 )
+
+                val sleep = sleepByDate[date]
+                val sleepStart = sleep?.primarySessionStart
+                val sleepEnd = sleep?.primarySessionEnd
+                if (sleepStart != null && sleepEnd != null) {
+                    val sleepSamples = daySamples.filter { it.first in sleepStart..sleepEnd }
+                    if (sleepSamples.isEmpty()) {
+                        Log.i(TAG, "  No HeartRate samples during primary sleep interval")
+                    } else {
+                        val sleepBpms = sleepSamples.map { it.second }
+                        val sleepMin = sleepBpms.minOrNull()
+                        val sleepMax = sleepBpms.maxOrNull()
+                        val sleepAvg = sleepBpms.average()
+                        Log.i(
+                            TAG,
+                            "  Sleep-period HR samples: count=${sleepSamples.size} " +
+                                "min=$sleepMin max=$sleepMax avg=${
+                                    String.format(Locale.US, "%.1f", sleepAvg)
+                                }",
+                        )
+                    }
+                } else {
+                    Log.i(TAG, "  No primary sleep interval available for this date")
+                }
             }
         } catch (e: SecurityException) {
             Log.i(TAG, "HeartRateRecord query failed: SecurityException / permission denied")

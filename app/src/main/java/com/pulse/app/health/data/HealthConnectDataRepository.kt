@@ -165,6 +165,19 @@ class HealthConnectDataRepository(
         val currentClient = client ?: return HealthDataResult.Unavailable
         val zoneId = ZoneId.systemDefault()
 
+        // HRV is attributed to the wake date of the primary overnight sleep session.
+        // Retrieve sleep first so the normalizer can scope HRV samples to sleep intervals.
+        val sleepResult = readSleepRange(startDate, endDate)
+        val sleepSummaries = when (sleepResult) {
+            is HealthDataResult.Success -> sleepResult.data
+            is HealthDataResult.PermissionDenied -> return HealthDataResult.PermissionDenied
+            is HealthDataResult.Failure -> return HealthDataResult.Failure(sleepResult.error)
+            is HealthDataResult.Unavailable -> emptyList()
+        }
+        if (sleepSummaries.isEmpty()) {
+            return HealthDataResult.Unavailable
+        }
+
         val queryStart = startDate.atStartOfDay(zoneId).toInstant()
         val queryEnd = endDate.plusDays(1).atStartOfDay(zoneId).toInstant()
 
@@ -174,8 +187,10 @@ class HealthConnectDataRepository(
                 timeRangeFilter = TimeRangeFilter.between(queryStart, queryEnd),
             )
             val response = currentClient.readRecords(request)
-            val summaries = HeartRateDataNormalizer.normalizeHeartRateVariability(response.records, zoneId)
-                .filter { it.date in startDate..endDate }
+            val summaries = HeartRateDataNormalizer.normalizeHeartRateVariability(
+                response.records,
+                sleepSummaries,
+            ).filter { it.date in startDate..endDate }
 
             if (summaries.isEmpty()) {
                 HealthDataResult.Unavailable

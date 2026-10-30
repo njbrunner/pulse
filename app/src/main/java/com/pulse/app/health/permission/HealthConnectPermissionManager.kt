@@ -7,6 +7,7 @@ import androidx.activity.result.contract.ActivityResultContract
 import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.PermissionController
 import androidx.health.connect.client.permission.HealthPermission
+import androidx.health.connect.client.records.HeartRateRecord
 import androidx.health.connect.client.records.HeartRateVariabilityRmssdRecord
 import androidx.health.connect.client.records.HydrationRecord
 import androidx.health.connect.client.records.RestingHeartRateRecord
@@ -41,6 +42,7 @@ class HealthConnectPermissionManager(
     override val requiredPermissions: Set<PulseHealthPermission> = setOf(
         PulseHealthPermission.SLEEP,
         PulseHealthPermission.STEPS,
+        PulseHealthPermission.HEART_RATE,
         PulseHealthPermission.RESTING_HEART_RATE,
         PulseHealthPermission.HRV,
         PulseHealthPermission.HYDRATION,
@@ -73,6 +75,8 @@ class HealthConnectPermissionManager(
                 HealthPermission.getReadPermission(SleepSessionRecord::class)
             PulseHealthPermission.STEPS ->
                 HealthPermission.getReadPermission(StepsRecord::class)
+            PulseHealthPermission.HEART_RATE ->
+                HealthPermission.getReadPermission(HeartRateRecord::class)
             PulseHealthPermission.RESTING_HEART_RATE ->
                 HealthPermission.getReadPermission(RestingHeartRateRecord::class)
             PulseHealthPermission.HRV ->

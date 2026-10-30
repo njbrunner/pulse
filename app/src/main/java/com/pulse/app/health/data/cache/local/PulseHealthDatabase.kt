@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [
@@ -13,7 +15,7 @@ import androidx.room.RoomDatabase
         HeartRateVariabilityEntity::class,
         HydrationEntity::class,
     ],
-    version = 1,
+    version = 2,
     exportSchema = false,
 )
 internal abstract class PulseHealthDatabase : RoomDatabase() {
@@ -25,12 +27,26 @@ internal abstract class PulseHealthDatabase : RoomDatabase() {
     abstract fun hydrationDao(): HydrationDao
 
     companion object {
+
+        private val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE sleep_cache ADD COLUMN primary_session_start_millis INTEGER",
+                )
+                db.execSQL(
+                    "ALTER TABLE sleep_cache ADD COLUMN primary_session_end_millis INTEGER",
+                )
+            }
+        }
+
         fun create(context: Context): PulseHealthDatabase {
             return Room.databaseBuilder(
                 context.applicationContext,
                 PulseHealthDatabase::class.java,
                 "pulse_health_database",
-            ).build()
+            )
+                .addMigrations(MIGRATION_1_2)
+                .build()
         }
 
         fun createInMemory(context: Context): PulseHealthDatabase {
