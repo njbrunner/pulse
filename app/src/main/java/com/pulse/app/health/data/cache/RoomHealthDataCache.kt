@@ -162,6 +162,8 @@ class RoomHealthDataCache internal constructor(
         durationSeconds = duration.seconds,
         efficiency = efficiency,
         continuity = continuity,
+        primarySessionStartMillis = primarySessionStart?.toEpochMilli(),
+        primarySessionEndMillis = primarySessionEnd?.toEpochMilli(),
         syncedAtMillis = syncedAt.toEpochMilli(),
     )
 
@@ -171,6 +173,8 @@ class RoomHealthDataCache internal constructor(
             duration = Duration.ofSeconds(durationSeconds),
             efficiency = efficiency,
             continuity = continuity,
+            primarySessionStart = primarySessionStartMillis?.let { Instant.ofEpochMilli(it) },
+            primarySessionEnd = primarySessionEndMillis?.let { Instant.ofEpochMilli(it) },
         ),
         syncedAt = Instant.ofEpochMilli(syncedAtMillis),
     )

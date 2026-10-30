@@ -20,6 +20,7 @@ import org.junit.runner.RunWith
 import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
+import java.time.ZoneOffset
 
 @RunWith(AndroidJUnit4::class)
 class RoomHealthDataCacheTest {
@@ -55,6 +56,29 @@ class RoomHealthDataCacheTest {
         assertNotNull(cached)
         assertEquals(sleep, cached!!.data)
         assertEquals(syncedAt, cached.syncedAt)
+    }
+
+    @Test
+    fun saveAndGetSleep_preservesPrimarySessionInterval() = runTest {
+        val syncedAt = Instant.now()
+        val zoneOffset = ZoneOffset.UTC
+        val sleep = SleepSummary(
+            date = LocalDate.of(2026, 10, 28),
+            duration = Duration.ofHours(8),
+            primarySessionStart = LocalDate.of(2026, 10, 27)
+                .atTime(22, 0)
+                .toInstant(zoneOffset),
+            primarySessionEnd = LocalDate.of(2026, 10, 28)
+                .atTime(6, 0)
+                .toInstant(zoneOffset),
+        )
+
+        cache.saveSleep(sleep, syncedAt)
+        val cached = cache.getSleep(sleep.date)
+
+        assertNotNull(cached)
+        assertEquals(sleep.primarySessionStart, cached!!.data.primarySessionStart)
+        assertEquals(sleep.primarySessionEnd, cached.data.primarySessionEnd)
     }
 
     @Test
