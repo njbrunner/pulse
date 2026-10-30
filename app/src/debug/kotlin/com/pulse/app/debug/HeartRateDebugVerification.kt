@@ -17,6 +17,7 @@ import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
+import java.time.temporal.ChronoUnit
 import java.util.Locale
 
 /**
@@ -51,7 +52,11 @@ internal object HeartRateDebugVerification {
             val today = LocalDate.now()
             val rangeStart = today.minusDays(6)
             val zoneId = ZoneId.systemDefault()
-            val queryStart = rangeStart.atStartOfDay(zoneId).toInstant()
+            // Expand the query window by one day before the requested range because the
+            // primary sleep session for the first requested day can start on the previous
+            // calendar date. The end is already the day after the requested range, which
+            // covers sleep periods ending on the final requested wake date.
+            val queryStart = rangeStart.minusDays(1).atStartOfDay(zoneId).toInstant()
             val queryEnd = today.plusDays(1).atStartOfDay(zoneId).toInstant()
             val timeRangeFilter = TimeRangeFilter.between(queryStart, queryEnd)
 
@@ -79,7 +84,7 @@ internal object HeartRateDebugVerification {
             logSleepPrimaryIntervals(sleepSummaries)
 
             logRawRestingHeartRate(client, timeRangeFilter, zoneId)
-            logRawHeartRate(client, timeRangeFilter, zoneId, sleepSummaries)
+            logRawHeartRate(client, timeRangeFilter, sleepSummaries, rangeStart, today)
             logRawHeartRateVariability(client, timeRangeFilter, zoneId)
 
             verifyRestingHeartRate(repository, today, rangeStart)
@@ -155,85 +160,150 @@ internal object HeartRateDebugVerification {
     private suspend fun logRawHeartRate(
         client: HealthConnectClient,
         timeRangeFilter: TimeRangeFilter,
-        zoneId: ZoneId,
         sleepSummaries: List<SleepSummary>,
+        rangeStart: LocalDate,
+        today: LocalDate,
     ) {
         Log.i(TAG, "=== Raw HeartRateRecord query (investigate RHR source) ===")
 
         try {
-            val request = ReadRecordsRequest(
+            val pageSize = 1000
+            Log.i(
+                TAG,
+                "Query window: start=${timeRangeFilter.startTime} end=${timeRangeFilter.endTime} " +
+                    "pageSize=$pageSize",
+            )
+
+            val pagedResult = client.readAllRecords(
                 recordType = HeartRateRecord::class,
                 timeRangeFilter = timeRangeFilter,
+                pageSize = pageSize,
             )
-            val response = client.readRecords(request)
-            val records = response.records
-            Log.i(TAG, "Total HeartRateRecord count: ${records.size}")
+            val records = pagedResult.records
+            val pagesRetrieved = pagedResult.pagesRetrieved
+
+            Log.i(
+                TAG,
+                "Retrieved $pagesRetrieved page(s), ${records.size} HeartRateRecord object(s)",
+            )
 
             if (records.isEmpty()) {
                 Log.i(TAG, "No HeartRateRecord objects found in the query window.")
                 return
             }
 
-            records.forEachIndexed { index, record ->
-                Log.i(
-                    TAG,
-                    "  [$index] start=${record.startTime} end=${record.endTime} " +
-                        "sampleCount=${record.samples.size} " +
-                        "origin=${record.metadata.dataOrigin.packageName} " +
-                        "deviceType=${record.metadata.device?.type}",
-                )
-            }
-
             val samples = records.flatMap { record ->
                 record.samples.map { sample ->
-                    Triple(sample.time, sample.beatsPerMinute, record.metadata.dataOrigin.packageName)
+                    HeartRateSample(
+                        time = sample.time,
+                        bpm = sample.beatsPerMinute,
+                        origin = record.metadata.dataOrigin.packageName,
+                    )
                 }
             }
-            val sleepByDate = sleepSummaries.associateBy { it.date }
-            val byDate = samples.groupBy { it.first.atZone(zoneId).toLocalDate() }
-            byDate.toSortedMap().forEach { (date, daySamples) ->
-                val bpms = daySamples.map { it.second }
-                val min = bpms.minOrNull()
-                val max = bpms.maxOrNull()
-                val avg = bpms.average()
-                val preview = bpms.take(10).joinToString(", ") { it.toString() }
-                Log.i(
-                    TAG,
-                    "Date $date: ${daySamples.size} HeartRate sample(s), " +
-                        "min=$min max=$max avg=${
-                            String.format(Locale.US, "%.1f", avg)
-                        } values=[$preview${if (daySamples.size > 10) ", ..." else ""}]",
-                )
 
-                val sleep = sleepByDate[date]
-                val sleepStart = sleep?.primarySessionStart
-                val sleepEnd = sleep?.primarySessionEnd
-                if (sleepStart != null && sleepEnd != null) {
-                    val sleepSamples = daySamples.filter { it.first in sleepStart..sleepEnd }
-                    if (sleepSamples.isEmpty()) {
-                        Log.i(TAG, "  No HeartRate samples during primary sleep interval")
-                    } else {
-                        val sleepBpms = sleepSamples.map { it.second }
-                        val sleepMin = sleepBpms.minOrNull()
-                        val sleepMax = sleepBpms.maxOrNull()
-                        val sleepAvg = sleepBpms.average()
-                        Log.i(
-                            TAG,
-                            "  Sleep-period HR samples: count=${sleepSamples.size} " +
-                                "min=$sleepMin max=$sleepMax avg=${
-                                    String.format(Locale.US, "%.1f", sleepAvg)
-                                }",
-                        )
-                    }
-                } else {
-                    Log.i(TAG, "  No primary sleep interval available for this date")
-                }
-            }
+            val earliest = samples.minByOrNull { it.time }?.time
+            val latest = samples.maxByOrNull { it.time }?.time
+            val origins = samples.map { it.origin }.distinct().sorted()
+
+            Log.i(
+                TAG,
+                "Total individual heart-rate samples: ${samples.size}, " +
+                    "earliest=$earliest latest=$latest origins=$origins",
+            )
+
+            logSleepPeriodHeartRateStatistics(
+                requestedRangeStart = rangeStart,
+                requestedRangeEnd = today,
+                sleepSummaries = sleepSummaries,
+                samples = samples,
+            )
         } catch (e: SecurityException) {
             Log.i(TAG, "HeartRateRecord query failed: SecurityException / permission denied")
         } catch (e: Exception) {
             Log.e(TAG, "HeartRateRecord query failed: ${e.javaClass.simpleName}: ${e.message}")
         }
+    }
+
+    private fun logSleepPeriodHeartRateStatistics(
+        requestedRangeStart: LocalDate,
+        requestedRangeEnd: LocalDate,
+        sleepSummaries: List<SleepSummary>,
+        samples: List<HeartRateSample>,
+    ) {
+        Log.i(TAG, "=== Sleep-period HR candidate statistics (debug only) ===")
+
+        if (sleepSummaries.isEmpty()) {
+            Log.i(TAG, "No sleep data available; no sleep-period HR statistics.")
+            return
+        }
+
+        val sleepByDate = sleepSummaries.associateBy { it.date }
+        var datesWithSleep = 0
+
+        var date = requestedRangeStart
+        while (!date.isAfter(requestedRangeEnd)) {
+            val sleep = sleepByDate[date]
+            val sleepStart = sleep?.primarySessionStart
+            val sleepEnd = sleep?.primarySessionEnd
+
+            if (sleepStart == null || sleepEnd == null) {
+                Log.i(
+                    TAG,
+                    "Date $date: No primary sleep session; " +
+                        "no sleep-period RHR candidate statistics available",
+                )
+                date = date.plusDays(1)
+                continue
+            }
+
+            datesWithSleep++
+            val sleepSamples = samples.filter { it.time in sleepStart..sleepEnd }
+            if (sleepSamples.isEmpty()) {
+                Log.i(
+                    TAG,
+                    "Date $date: sleepStart=$sleepStart sleepEnd=$sleepEnd " +
+                        "samples=0 (no HR samples during primary sleep interval)",
+                )
+                date = date.plusDays(1)
+                continue
+            }
+
+            val bpms = sleepSamples.map { it.bpm }
+            val min = bpms.minOrNull() ?: error("non-empty list has no minimum")
+            val mean = bpms.average()
+            val median = percentile(bpms, 50.0)
+            val p5 = percentile(bpms, 5.0)
+            val p10 = percentile(bpms, 10.0)
+            val p15 = percentile(bpms, 15.0)
+            val p20 = percentile(bpms, 20.0)
+
+            Log.i(
+                TAG,
+                "Date $date: sleepStart=$sleepStart sleepEnd=$sleepEnd " +
+                    "samples=${bpms.size} min=${min} mean=${
+                        String.format(Locale.US, "%.1f", mean)
+                    } median=${
+                        String.format(Locale.US, "%.1f", median)
+                    } p5=${
+                        String.format(Locale.US, "%.1f", p5)
+                    } p10=${
+                        String.format(Locale.US, "%.1f", p10)
+                    } p15=${
+                        String.format(Locale.US, "%.1f", p15)
+                    } p20=${
+                        String.format(Locale.US, "%.1f", p20)
+                    }",
+            )
+
+            date = date.plusDays(1)
+        }
+
+        val requestedDays = ChronoUnit.DAYS.between(requestedRangeStart, requestedRangeEnd).toInt() + 1
+        Log.i(
+            TAG,
+            "Dates with primary sleep sessions in requested range: $datesWithSleep / $requestedDays",
+        )
     }
 
     private suspend fun logRawHeartRateVariability(
@@ -376,5 +446,36 @@ internal object HeartRateDebugVerification {
             TAG,
             "$label: Failure: ${error.javaClass.simpleName}: ${error.message}",
         )
+    }
+
+    private data class HeartRateSample(
+        val time: Instant,
+        val bpm: Long,
+        val origin: String,
+    )
+
+    /**
+     * Returns the p-th percentile of [values] using linear interpolation between
+     * the closest ranks (Excel PERCENTILE.INC / NumPy default "linear" method).
+     *
+     * The list is sorted in ascending order. For a percentile p in [0, 100]:
+     *   rank = (p / 100) * (n - 1)
+     *   lower = floor(rank), upper = ceil(rank)
+     *   result = sorted[lower] + (rank - lower) * (sorted[upper] - sorted[lower])
+     *
+     * @param values the sample values; must not be empty
+     * @param percentile the percentile to compute, in the range [0.0, 100.0]
+     */
+    private fun percentile(values: List<Long>, percentile: Double): Double {
+        require(values.isNotEmpty()) { "Cannot compute percentile of an empty list" }
+        require(percentile in 0.0..100.0) { "Percentile must be in [0.0, 100.0]" }
+
+        val sorted = values.sorted()
+        val rank = percentile / 100.0 * (sorted.size - 1)
+        val lowerIndex = kotlin.math.floor(rank).toInt()
+        val upperIndex = kotlin.math.ceil(rank).toInt()
+        val lowerValue = sorted[lowerIndex].toDouble()
+        val upperValue = sorted[upperIndex].toDouble()
+        return lowerValue + (rank - lowerIndex) * (upperValue - lowerValue)
     }
 }
