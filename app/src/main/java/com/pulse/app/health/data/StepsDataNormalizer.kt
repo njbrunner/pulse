@@ -79,7 +79,7 @@ internal object StepsDataNormalizer {
             val segmentEnd = minOf(record.endTime, dayEnd)
             val segmentDuration = Duration.between(segmentStart, segmentEnd)
 
-            if (segmentDuration.isPositive) {
+            if (!segmentDuration.isZero && !segmentDuration.isNegative) {
                 val isLastDay = currentDate == endDate
                 val portion = if (isLastDay) {
                     remainingCount
