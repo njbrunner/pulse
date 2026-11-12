@@ -35,6 +35,7 @@ class FakeHealthPermissionManagerTest {
         val expected = setOf(
             PulseHealthPermission.SLEEP,
             PulseHealthPermission.STEPS,
+            PulseHealthPermission.HEART_RATE,
             PulseHealthPermission.RESTING_HEART_RATE,
             PulseHealthPermission.HRV,
             PulseHealthPermission.HYDRATION,

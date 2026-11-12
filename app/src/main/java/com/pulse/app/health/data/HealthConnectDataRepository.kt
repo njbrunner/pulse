@@ -2,6 +2,8 @@ package com.pulse.app.health.data
 
 import android.content.Context
 import androidx.health.connect.client.HealthConnectClient
+import androidx.health.connect.client.records.HeartRateVariabilityRmssdRecord
+import androidx.health.connect.client.records.RestingHeartRateRecord
 import androidx.health.connect.client.records.SleepSessionRecord
 import androidx.health.connect.client.request.ReadRecordsRequest
 import androidx.health.connect.client.time.TimeRangeFilter
@@ -18,9 +20,10 @@ import java.time.ZoneId
 /**
  * [HealthDataRepository] implementation backed by Google Health Connect.
  *
- * Detailed per-metric retrieval logic will be implemented in later issues
- * (#6 heart rate, #7 steps, #8 hydration). This class establishes
- * the Health Connect boundary, result mapping, and error-handling pattern.
+ * Detailed per-metric retrieval logic is added incrementally per issue. Sleep
+ * (#5) and heart rate (#6) are implemented; steps (#7) and hydration (#8) are
+ * still placeholders. This class establishes the Health Connect boundary,
+ * result mapping, and error-handling pattern.
  */
 class HealthConnectDataRepository(
     private val applicationContext: Context,
@@ -95,27 +98,112 @@ class HealthConnectDataRepository(
     }
 
     override suspend fun readRestingHeartRate(date: LocalDate): HealthDataResult<RestingHeartRate> {
-        return readUnavailable()
+        return when (val rangeResult = readRestingHeartRateRange(date, date)) {
+            is HealthDataResult.Success -> {
+                rangeResult.data.firstOrNull()?.let { HealthDataResult.Success(it) }
+                    ?: HealthDataResult.Unavailable
+            }
+
+            is HealthDataResult.Unavailable -> HealthDataResult.Unavailable
+            is HealthDataResult.PermissionDenied -> HealthDataResult.PermissionDenied
+            is HealthDataResult.Failure -> HealthDataResult.Failure(rangeResult.error)
+        }
     }
 
     override suspend fun readRestingHeartRateRange(
         startDate: LocalDate,
         endDate: LocalDate,
     ): HealthDataResult<List<RestingHeartRate>> {
-        return readUnavailable()
+        val currentClient = client ?: return HealthDataResult.Unavailable
+        val zoneId = ZoneId.systemDefault()
+
+        val queryStart = startDate.atStartOfDay(zoneId).toInstant()
+        val queryEnd = endDate.plusDays(1).atStartOfDay(zoneId).toInstant()
+
+        return try {
+            val request = ReadRecordsRequest(
+                recordType = RestingHeartRateRecord::class,
+                timeRangeFilter = TimeRangeFilter.between(queryStart, queryEnd),
+            )
+            val response = currentClient.readRecords(request)
+            val summaries = HeartRateDataNormalizer.normalizeRestingHeartRate(response.records, zoneId)
+                .filter { it.date in startDate..endDate }
+
+            if (summaries.isEmpty()) {
+                HealthDataResult.Unavailable
+            } else {
+                val syncedAt = Instant.now()
+                healthDataCache.saveRestingHeartRateRange(summaries, syncedAt)
+                HealthDataResult.Success(summaries)
+            }
+        } catch (e: SecurityException) {
+            HealthDataResult.PermissionDenied
+        } catch (e: Exception) {
+            HealthDataResult.Failure(e)
+        }
     }
 
     override suspend fun readHeartRateVariability(
         date: LocalDate,
     ): HealthDataResult<HeartRateVariability> {
-        return readUnavailable()
+        return when (val rangeResult = readHeartRateVariabilityRange(date, date)) {
+            is HealthDataResult.Success -> {
+                rangeResult.data.firstOrNull()?.let { HealthDataResult.Success(it) }
+                    ?: HealthDataResult.Unavailable
+            }
+
+            is HealthDataResult.Unavailable -> HealthDataResult.Unavailable
+            is HealthDataResult.PermissionDenied -> HealthDataResult.PermissionDenied
+            is HealthDataResult.Failure -> HealthDataResult.Failure(rangeResult.error)
+        }
     }
 
     override suspend fun readHeartRateVariabilityRange(
         startDate: LocalDate,
         endDate: LocalDate,
     ): HealthDataResult<List<HeartRateVariability>> {
-        return readUnavailable()
+        val currentClient = client ?: return HealthDataResult.Unavailable
+        val zoneId = ZoneId.systemDefault()
+
+        // HRV is attributed to the wake date of the primary overnight sleep session.
+        // Retrieve sleep first so the normalizer can scope HRV samples to sleep intervals.
+        val sleepResult = readSleepRange(startDate, endDate)
+        val sleepSummaries = when (sleepResult) {
+            is HealthDataResult.Success -> sleepResult.data
+            is HealthDataResult.PermissionDenied -> return HealthDataResult.PermissionDenied
+            is HealthDataResult.Failure -> return HealthDataResult.Failure(sleepResult.error)
+            is HealthDataResult.Unavailable -> emptyList()
+        }
+        if (sleepSummaries.isEmpty()) {
+            return HealthDataResult.Unavailable
+        }
+
+        val queryStart = startDate.atStartOfDay(zoneId).toInstant()
+        val queryEnd = endDate.plusDays(1).atStartOfDay(zoneId).toInstant()
+
+        return try {
+            val request = ReadRecordsRequest(
+                recordType = HeartRateVariabilityRmssdRecord::class,
+                timeRangeFilter = TimeRangeFilter.between(queryStart, queryEnd),
+            )
+            val response = currentClient.readRecords(request)
+            val summaries = HeartRateDataNormalizer.normalizeHeartRateVariability(
+                response.records,
+                sleepSummaries,
+            ).filter { it.date in startDate..endDate }
+
+            if (summaries.isEmpty()) {
+                HealthDataResult.Unavailable
+            } else {
+                val syncedAt = Instant.now()
+                healthDataCache.saveHeartRateVariabilityRange(summaries, syncedAt)
+                HealthDataResult.Success(summaries)
+            }
+        } catch (e: SecurityException) {
+            HealthDataResult.PermissionDenied
+        } catch (e: Exception) {
+            HealthDataResult.Failure(e)
+        }
     }
 
     override suspend fun readHydration(date: LocalDate): HealthDataResult<HydrationSummary> {

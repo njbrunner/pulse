@@ -19,6 +19,12 @@ internal data class SleepEntity(
     @ColumnInfo(name = "continuity")
     val continuity: Float?,
 
+    @ColumnInfo(name = "primary_session_start_millis")
+    val primarySessionStartMillis: Long?,
+
+    @ColumnInfo(name = "primary_session_end_millis")
+    val primarySessionEndMillis: Long?,
+
     @ColumnInfo(name = "synced_at_millis")
     val syncedAtMillis: Long,
 )

@@ -3,6 +3,7 @@ package com.pulse.app.health.data
 import androidx.health.connect.client.records.SleepSessionRecord
 import com.pulse.app.health.data.model.SleepSummary
 import java.time.Duration
+import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 
@@ -52,6 +53,8 @@ internal object SleepDataNormalizer {
         if (stages.isNullOrEmpty()) {
             return NormalizedSleepSession(
                 date = date,
+                startTime = session.startTime,
+                endTime = session.endTime,
                 duration = sessionDuration,
                 efficiency = null,
                 continuity = null,
@@ -108,6 +111,8 @@ internal object SleepDataNormalizer {
 
         return NormalizedSleepSession(
             date = date,
+            startTime = session.startTime,
+            endTime = session.endTime,
             duration = sleepingDuration,
             efficiency = efficiency,
             continuity = continuity,
@@ -121,7 +126,10 @@ internal object SleepDataNormalizer {
         val totalDuration = sessions.fold(Duration.ZERO) { acc, session ->
             acc + session.duration
         }
-        val totalSleepingSeconds = totalDuration.seconds
+
+        // The primary session is the longest individual session attributed to this day.
+        // Its interval is used to associate other metrics, such as HRV, with sleep.
+        val primarySession = sessions.maxByOrNull { it.duration }
 
         val efficiency = weightedAverage(
             values = sessions.mapNotNull { session ->
@@ -140,6 +148,8 @@ internal object SleepDataNormalizer {
             duration = totalDuration,
             efficiency = efficiency,
             continuity = continuity,
+            primarySessionStart = primarySession?.startTime,
+            primarySessionEnd = primarySession?.endTime,
         )
     }
 
@@ -164,6 +174,8 @@ internal object SleepDataNormalizer {
 
     private data class NormalizedSleepSession(
         val date: LocalDate,
+        val startTime: Instant,
+        val endTime: Instant,
         val duration: Duration,
         val efficiency: Float?,
         val continuity: Float?,

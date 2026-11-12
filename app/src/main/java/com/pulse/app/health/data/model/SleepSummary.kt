@@ -1,6 +1,7 @@
 package com.pulse.app.health.data.model
 
 import java.time.Duration
+import java.time.Instant
 import java.time.LocalDate
 
 /**
@@ -12,10 +13,16 @@ import java.time.LocalDate
  *
  * Efficiency and continuity are represented as fractions in the range [0.0, 1.0]
  * when available; they are null when the underlying data is insufficient.
+ *
+ * [primarySessionStart] and [primarySessionEnd] capture the interval of the
+ * longest sleep session attributed to [date]. These are used to associate
+ * other metrics, such as HRV, with the primary overnight sleep period.
  */
 data class SleepSummary(
     val date: LocalDate,
     val duration: Duration,
     val efficiency: Float? = null,
     val continuity: Float? = null,
+    val primarySessionStart: Instant? = null,
+    val primarySessionEnd: Instant? = null,
 )

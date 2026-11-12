@@ -24,6 +24,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.pulse.app.health.permission.HealthConnectPermissionManager
+import com.pulse.app.debug.HeartRateDebugVerification
 import com.pulse.app.debug.SleepDebugVerification
 import com.pulse.app.health.permission.HealthPermissionState
 import com.pulse.app.health.permission.HealthPermissionViewModel
@@ -72,6 +73,7 @@ class MainActivity : ComponentActivity() {
         }
 
         SleepDebugVerification.trigger(this)
+        HeartRateDebugVerification.trigger(this)
     }
 
     companion object {

@@ -3,6 +3,7 @@ package com.pulse.app.health.data
 import androidx.health.connect.client.records.SleepSessionRecord
 import androidx.health.connect.client.records.SleepSessionRecord.Stage
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -316,5 +317,52 @@ class SleepDataNormalizerTest {
             endTime = end,
             stage = SleepSessionRecord.STAGE_TYPE_OUT_OF_BED,
         )
+    }
+
+    @Test
+    fun singleSession_capturesPrimarySessionInterval() {
+        val start = date.atStartOfDay(zoneOffset).minusHours(2).toInstant()
+        val end = date.atStartOfDay(zoneOffset).plusHours(6).toInstant()
+        val session = sleepSession(
+            start = start,
+            end = end,
+            stages = listOf(sleepStage(start, end)),
+        )
+
+        val result = SleepDataNormalizer.normalize(listOf(session), zoneOffset)
+
+        assertEquals(1, result.size)
+        assertEquals(start, result[0].primarySessionStart)
+        assertEquals(end, result[0].primarySessionEnd)
+    }
+
+    @Test
+    fun multipleSessionsOnSameDay_primarySessionIsLongest() {
+        val previousDay = date.minusDays(1)
+
+        // Long overnight session: previous day 21:00 -> date 09:00 (attributed to date).
+        val longStart = previousDay.atTime(21, 0).toInstant(zoneOffset)
+        val longEnd = date.atTime(9, 0).toInstant(zoneOffset)
+        val longSession = sleepSession(
+            start = longStart,
+            end = longEnd,
+            stages = listOf(sleepStage(longStart, longEnd)),
+        )
+
+        // Short overnight session: previous day 23:00 -> date 01:00 (also attributed to date).
+        val shortStart = previousDay.atTime(23, 0).toInstant(zoneOffset)
+        val shortEnd = date.atTime(1, 0).toInstant(zoneOffset)
+        val shortSession = sleepSession(
+            start = shortStart,
+            end = shortEnd,
+            stages = listOf(sleepStage(shortStart, shortEnd)),
+        )
+
+        val result = SleepDataNormalizer.normalize(listOf(shortSession, longSession), zoneOffset)
+
+        assertEquals(1, result.size)
+        assertEquals(date, result[0].date)
+        assertEquals(longStart, result[0].primarySessionStart)
+        assertEquals(longEnd, result[0].primarySessionEnd)
     }
 }
