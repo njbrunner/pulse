@@ -23,6 +23,9 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.pulse.app.BuildConfig
+import com.pulse.app.health.data.HealthConnectDataRepository
+import com.pulse.app.health.data.cache.RoomHealthDataCache
 import com.pulse.app.health.permission.HealthConnectPermissionManager
 import com.pulse.app.debug.HeartRateDebugVerification
 import com.pulse.app.debug.SleepDebugVerification
@@ -43,6 +46,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private lateinit var permissionLauncher: ActivityResultLauncher<Unit>
+    private var debugHealthDataCache: RoomHealthDataCache? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         permissionLauncher = registerForActivityResult(
@@ -73,9 +77,19 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        SleepDebugVerification.trigger(this)
-        HeartRateDebugVerification.trigger(this)
-        StepsDebugVerification.trigger(this)
+        if (BuildConfig.DEBUG) {
+            val cache = RoomHealthDataCache(applicationContext)
+            val repository = HealthConnectDataRepository(applicationContext, cache)
+            debugHealthDataCache = cache
+            SleepDebugVerification.trigger(this, repository)
+            HeartRateDebugVerification.trigger(this, repository)
+            StepsDebugVerification.trigger(this, repository)
+        }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        debugHealthDataCache?.close()
     }
 
     companion object {

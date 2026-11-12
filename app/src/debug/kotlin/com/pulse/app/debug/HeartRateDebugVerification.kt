@@ -5,7 +5,6 @@ import androidx.activity.ComponentActivity
 import androidx.lifecycle.lifecycleScope
 import com.pulse.app.health.data.HealthConnectDataRepository
 import com.pulse.app.health.data.HealthDataResult
-import com.pulse.app.health.data.cache.RoomHealthDataCache
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 
@@ -23,12 +22,8 @@ internal object HeartRateDebugVerification {
 
     private const val TAG = "PulseHeartDebug"
 
-    fun trigger(activity: ComponentActivity) {
+    fun trigger(activity: ComponentActivity, repository: HealthConnectDataRepository) {
         activity.lifecycleScope.launch {
-            val context = activity.applicationContext
-            val cache = RoomHealthDataCache(context)
-            val repository = HealthConnectDataRepository(context, cache)
-
             val today = LocalDate.now()
             val rangeStart = today.minusDays(6)
 

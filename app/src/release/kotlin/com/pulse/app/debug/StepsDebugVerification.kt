@@ -1,6 +1,7 @@
 package com.pulse.app.debug
 
 import androidx.activity.ComponentActivity
+import com.pulse.app.health.data.HealthConnectDataRepository
 
 /**
  * Release no-op counterpart of [StepsDebugVerification]. Keeps the MainActivity
@@ -8,5 +9,5 @@ import androidx.activity.ComponentActivity
  * completely absent from release builds.
  */
 internal object StepsDebugVerification {
-    fun trigger(activity: ComponentActivity) = Unit
+    fun trigger(activity: ComponentActivity, repository: HealthConnectDataRepository) = Unit
 }
