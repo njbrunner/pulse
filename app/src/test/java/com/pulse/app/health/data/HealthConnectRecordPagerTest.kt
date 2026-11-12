@@ -1,4 +1,4 @@
-package com.pulse.app.debug
+package com.pulse.app.health.data
 
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals

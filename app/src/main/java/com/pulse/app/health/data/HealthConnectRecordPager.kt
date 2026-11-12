@@ -1,4 +1,4 @@
-package com.pulse.app.debug
+package com.pulse.app.health.data
 
 import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.records.Record
@@ -57,7 +57,9 @@ internal suspend fun <T> fetchAllPages(
  *
  * Health Connect caps each [HealthConnectClient.readRecords] response at
  * [pageSize] record objects (default 1,000). A single call therefore cannot be
- * assumed to contain the full requested range.
+ * assumed to contain the full requested range, so production range reads must
+ * follow [androidx.health.connect.client.response.ReadRecordsResponse.pageToken]
+ * until it is exhausted.
  */
 internal suspend fun <T : Record> HealthConnectClient.readAllRecords(
     recordType: KClass<T>,
