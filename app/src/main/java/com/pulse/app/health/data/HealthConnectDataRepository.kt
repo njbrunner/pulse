@@ -7,6 +7,8 @@ import androidx.health.connect.client.records.HeartRateVariabilityRmssdRecord
 import androidx.health.connect.client.records.RestingHeartRateRecord
 import androidx.health.connect.client.records.SleepSessionRecord
 import androidx.health.connect.client.records.StepsRecord
+import androidx.health.connect.client.request.AggregateGroupByPeriodRequest
+import androidx.health.connect.client.request.AggregateRequest
 import androidx.health.connect.client.request.ReadRecordsRequest
 import androidx.health.connect.client.time.TimeRangeFilter
 import com.pulse.app.health.data.cache.HealthDataCache
@@ -17,6 +19,7 @@ import com.pulse.app.health.data.model.SleepSummary
 import com.pulse.app.health.data.model.StepsSummary
 import java.time.Instant
 import java.time.LocalDate
+import java.time.Period
 import java.time.ZoneId
 
 /**
@@ -89,15 +92,31 @@ class HealthConnectDataRepository(
     }
 
     override suspend fun readSteps(date: LocalDate): HealthDataResult<StepsSummary> {
-        return when (val rangeResult = readStepsRange(date, date)) {
-            is HealthDataResult.Success -> {
-                rangeResult.data.firstOrNull()?.let { HealthDataResult.Success(it) }
-                    ?: HealthDataResult.Unavailable
-            }
+        val currentClient = client ?: return HealthDataResult.Unavailable
+        val zoneId = ZoneId.systemDefault()
 
-            is HealthDataResult.Unavailable -> HealthDataResult.Unavailable
-            is HealthDataResult.PermissionDenied -> HealthDataResult.PermissionDenied
-            is HealthDataResult.Failure -> HealthDataResult.Failure(rangeResult.error)
+        return try {
+            val request = AggregateRequest(
+                metrics = setOf(StepsRecord.COUNT_TOTAL),
+                timeRangeFilter = TimeRangeFilter.between(
+                    date.atStartOfDay(zoneId).toInstant(),
+                    date.plusDays(1).atStartOfDay(zoneId).toInstant(),
+                ),
+            )
+            val response = currentClient.aggregate(request)
+            val summary = StepsDataNormalizer.toStepsSummary(response, date)
+
+            if (summary == null) {
+                HealthDataResult.Unavailable
+            } else {
+                val syncedAt = Instant.now()
+                healthDataCache.saveSteps(summary, syncedAt)
+                HealthDataResult.Success(summary)
+            }
+        } catch (e: SecurityException) {
+            HealthDataResult.PermissionDenied
+        } catch (e: Exception) {
+            HealthDataResult.Failure(e)
         }
     }
 
@@ -106,18 +125,18 @@ class HealthConnectDataRepository(
         endDate: LocalDate,
     ): HealthDataResult<List<StepsSummary>> {
         val currentClient = client ?: return HealthDataResult.Unavailable
-        val zoneId = ZoneId.systemDefault()
-
-        val queryStart = startDate.atStartOfDay(zoneId).toInstant()
-        val queryEnd = endDate.plusDays(1).atStartOfDay(zoneId).toInstant()
 
         return try {
-            val request = ReadRecordsRequest(
-                recordType = StepsRecord::class,
-                timeRangeFilter = TimeRangeFilter.between(queryStart, queryEnd),
+            val request = AggregateGroupByPeriodRequest(
+                metrics = setOf(StepsRecord.COUNT_TOTAL),
+                timeRangeFilter = TimeRangeFilter.between(
+                    startDate.atStartOfDay(),
+                    endDate.plusDays(1).atStartOfDay(),
+                ),
+                timeRangeSlicer = Period.ofDays(1),
             )
-            val response = currentClient.readRecords(request)
-            val summaries = StepsDataNormalizer.normalize(response.records, zoneId)
+            val response = currentClient.aggregateGroupByPeriod(request)
+            val summaries = StepsDataNormalizer.toStepsSummaries(response)
                 .filter { it.date in startDate..endDate }
 
             if (summaries.isEmpty()) {

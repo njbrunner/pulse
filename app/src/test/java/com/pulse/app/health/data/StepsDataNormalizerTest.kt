@@ -1,166 +1,137 @@
 package com.pulse.app.health.data
 
+import androidx.health.connect.client.aggregate.AggregationResult
+import androidx.health.connect.client.aggregate.AggregationResultGroupedByPeriod
 import androidx.health.connect.client.records.StepsRecord
-import androidx.health.connect.client.records.metadata.Device
-import androidx.health.connect.client.records.metadata.Metadata
+import com.pulse.app.health.data.model.StepsSummary
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import java.time.Instant
 import java.time.LocalDate
-import java.time.ZoneOffset
 
 class StepsDataNormalizerTest {
 
-    private val zoneOffset = ZoneOffset.UTC
     private val date = LocalDate.of(2026, 10, 28)
 
     @Test
-    fun emptyRecords_returnsEmptyList() {
-        val result = StepsDataNormalizer.normalize(emptyList(), zoneOffset)
+    fun toStepsSummary_withCountTotal_mapsToSummary() {
+        val aggregate = aggregationResult(steps = 10_000L)
+
+        val result = StepsDataNormalizer.toStepsSummary(aggregate, date)
+
+        assertEquals(StepsSummary(date = date, steps = 10_000L), result)
+    }
+
+    @Test
+    fun toStepsSummary_withZeroCountTotal_mapsToZeroSummary() {
+        val aggregate = aggregationResult(steps = 0L)
+
+        val result = StepsDataNormalizer.toStepsSummary(aggregate, date)
+
+        assertEquals(StepsSummary(date = date, steps = 0L), result)
+    }
+
+    @Test
+    fun toStepsSummary_withoutCountTotal_returnsNull() {
+        val aggregate = AggregationResult(
+            longValues = emptyMap(),
+            doubleValues = emptyMap(),
+            dataOrigins = emptySet(),
+        )
+
+        val result = StepsDataNormalizer.toStepsSummary(aggregate, date)
+
+        assertNull(result)
+    }
+
+    @Test
+    fun toStepsSummaries_withMultipleDays_mapsAndSortsByDate() {
+        val day1 = date
+        val day2 = date.plusDays(1)
+        val day3 = date.plusDays(2)
+
+        val grouped = listOf(
+            groupedResult(day = day3, steps = 5_000L),
+            groupedResult(day = day1, steps = 10_000L),
+            groupedResult(day = day2, steps = 7_500L),
+        )
+
+        val result = StepsDataNormalizer.toStepsSummaries(grouped)
+
+        assertEquals(3, result.size)
+        assertEquals(StepsSummary(day1, 10_000L), result[0])
+        assertEquals(StepsSummary(day2, 7_500L), result[1])
+        assertEquals(StepsSummary(day3, 5_000L), result[2])
+    }
+
+    @Test
+    fun toStepsSummaries_withMissingBucket_omitsThatDay() {
+        val day1 = date
+        val day2 = date.plusDays(1)
+        val day3 = date.plusDays(2)
+
+        val grouped = listOf(
+            groupedResult(day = day1, steps = 10_000L),
+            groupedResultWithoutSteps(day = day2),
+            groupedResult(day = day3, steps = 5_000L),
+        )
+
+        val result = StepsDataNormalizer.toStepsSummaries(grouped)
+
+        assertEquals(2, result.size)
+        assertEquals(StepsSummary(day1, 10_000L), result[0])
+        assertEquals(StepsSummary(day3, 5_000L), result[1])
+    }
+
+    @Test
+    fun toStepsSummaries_emptyList_returnsEmptyList() {
+        val result = StepsDataNormalizer.toStepsSummaries(emptyList())
 
         assertTrue(result.isEmpty())
     }
 
     @Test
-    fun singleRecordWithinOneDay_mapsToSummary() {
-        val start = date.atTime(8, 0).toInstant(zoneOffset)
-        val end = date.atTime(9, 0).toInstant(zoneOffset)
-        val record = stepsRecord(start = start, end = end, count = 1_000L)
-
-        val result = StepsDataNormalizer.normalize(listOf(record), zoneOffset)
-
-        assertEquals(1, result.size)
-        assertEquals(date, result[0].date)
-        assertEquals(1_000L, result[0].steps)
-    }
-
-    @Test
-    fun multipleRecordsOnSameDay_areSummed() {
-        val records = listOf(
-            stepsRecord(
-                start = date.atTime(8, 0).toInstant(zoneOffset),
-                end = date.atTime(9, 0).toInstant(zoneOffset),
-                count = 1_000L,
-            ),
-            stepsRecord(
-                start = date.atTime(10, 0).toInstant(zoneOffset),
-                end = date.atTime(11, 0).toInstant(zoneOffset),
-                count = 2_500L,
-            ),
+    fun toStepsSummaries_localDateTimeAttribution_usesBucketStartDate() {
+        // A bucket whose LocalDateTime start does not match the list order
+        // should still be attributed to the correct local calendar day.
+        val expectedDate = LocalDate.of(2026, 10, 15)
+        val grouped = listOf(
+            groupedResult(day = expectedDate, steps = 3_000L),
         )
 
-        val result = StepsDataNormalizer.normalize(records, zoneOffset)
+        val result = StepsDataNormalizer.toStepsSummaries(grouped)
 
         assertEquals(1, result.size)
-        assertEquals(date, result[0].date)
-        assertEquals(3_500L, result[0].steps)
+        assertEquals(expectedDate, result[0].date)
+        assertEquals(3_000L, result[0].steps)
     }
 
-    @Test
-    fun multipleDays_areSortedByDate() {
-        val day1 = date
-        val day2 = date.plusDays(1)
-        val records = listOf(
-            stepsRecord(
-                start = day2.atTime(8, 0).toInstant(zoneOffset),
-                end = day2.atTime(9, 0).toInstant(zoneOffset),
-                count = 2_000L,
-            ),
-            stepsRecord(
-                start = day1.atTime(8, 0).toInstant(zoneOffset),
-                end = day1.atTime(9, 0).toInstant(zoneOffset),
-                count = 1_000L,
-            ),
+    private fun aggregationResult(steps: Long): AggregationResult {
+        return AggregationResult(
+            longValues = mapOf(StepsRecord.COUNT_TOTAL.metricKey to steps),
+            doubleValues = emptyMap(),
+            dataOrigins = emptySet(),
         )
-
-        val result = StepsDataNormalizer.normalize(records, zoneOffset)
-
-        assertEquals(2, result.size)
-        assertEquals(day1, result[0].date)
-        assertEquals(1_000L, result[0].steps)
-        assertEquals(day2, result[1].date)
-        assertEquals(2_000L, result[1].steps)
     }
 
-    @Test
-    fun recordCrossingMidnight_isSplitProportionallyByDay() {
-        val previousDay = date.minusDays(1)
-        val start = previousDay.atTime(23, 0).toInstant(zoneOffset)
-        val end = date.atTime(1, 0).toInstant(zoneOffset)
-        val record = stepsRecord(start = start, end = end, count = 1_200L)
-
-        val result = StepsDataNormalizer.normalize(listOf(record), zoneOffset)
-
-        assertEquals(2, result.size)
-        assertEquals(previousDay, result[0].date)
-        assertEquals(600L, result[0].steps)
-        assertEquals(date, result[1].date)
-        assertEquals(600L, result[1].steps)
-    }
-
-    @Test
-    fun recordCrossingMidnight_preservesTotalStepCount() {
-        val previousDay = date.minusDays(1)
-        val start = previousDay.atTime(23, 30).toInstant(zoneOffset)
-        val end = date.atTime(0, 30).toInstant(zoneOffset)
-        val record = stepsRecord(start = start, end = end, count = 1L)
-
-        val result = StepsDataNormalizer.normalize(listOf(record), zoneOffset)
-
-        val totalSteps = result.sumOf { it.steps }
-        assertEquals(1L, totalSteps)
-    }
-
-    @Test
-    fun daysWithNoRecords_areOmitted() {
-        val record = stepsRecord(
-            start = date.atTime(8, 0).toInstant(zoneOffset),
-            end = date.atTime(9, 0).toInstant(zoneOffset),
-            count = 1_000L,
+    private fun groupedResult(day: LocalDate, steps: Long): AggregationResultGroupedByPeriod {
+        return AggregationResultGroupedByPeriod(
+            result = aggregationResult(steps),
+            startTime = day.atStartOfDay(),
+            endTime = day.plusDays(1).atStartOfDay(),
         )
-
-        val result = StepsDataNormalizer.normalize(listOf(record), zoneOffset)
-
-        assertEquals(1, result.size)
-        assertEquals(date, result[0].date)
     }
 
-    @Test
-    fun overlappingRecords_areSummed() {
-        val records = listOf(
-            stepsRecord(
-                start = date.atTime(8, 0).toInstant(zoneOffset),
-                end = date.atTime(9, 0).toInstant(zoneOffset),
-                count = 1_000L,
+    private fun groupedResultWithoutSteps(day: LocalDate): AggregationResultGroupedByPeriod {
+        return AggregationResultGroupedByPeriod(
+            result = AggregationResult(
+                longValues = emptyMap(),
+                doubleValues = emptyMap(),
+                dataOrigins = emptySet(),
             ),
-            stepsRecord(
-                start = date.atTime(8, 30).toInstant(zoneOffset),
-                end = date.atTime(9, 30).toInstant(zoneOffset),
-                count = 500L,
-            ),
-        )
-
-        val result = StepsDataNormalizer.normalize(records, zoneOffset)
-
-        assertEquals(1, result.size)
-        assertEquals(1_500L, result[0].steps)
-    }
-
-    private fun stepsRecord(
-        start: Instant,
-        end: Instant,
-        count: Long,
-    ): StepsRecord {
-        return StepsRecord(
-            startTime = start,
-            startZoneOffset = zoneOffset,
-            endTime = end,
-            endZoneOffset = zoneOffset,
-            count = count,
-            metadata = Metadata.activelyRecorded(
-                device = Device(type = Device.TYPE_UNKNOWN),
-            ),
+            startTime = day.atStartOfDay(),
+            endTime = day.plusDays(1).atStartOfDay(),
         )
     }
 }

@@ -1,103 +1,51 @@
 package com.pulse.app.health.data
 
+import androidx.health.connect.client.aggregate.AggregationResult
+import androidx.health.connect.client.aggregate.AggregationResultGroupedByPeriod
 import androidx.health.connect.client.records.StepsRecord
 import com.pulse.app.health.data.model.StepsSummary
-import java.time.Duration
 import java.time.LocalDate
-import java.time.ZoneId
-import kotlin.math.roundToLong
 
 /**
- * Normalizes Google Health Connect [StepsRecord]s into application-level
+ * Maps Google Health Connect step aggregate results into application-level
  * [StepsSummary] models.
  *
- * Each [StepsRecord] represents a step count over a time interval. Records are
- * attributed to local calendar days and summed per day. When a record crosses a
- * local day boundary, its count is distributed proportionally by the duration
- * spent in each day so daily totals respect the device's time zone.
+ * Health Connect performs per-day aggregation and source deduplication through
+ * the Aggregate API, so Pulse only needs to convert the returned buckets into
+ * its own model. Days without aggregate data are omitted, allowing callers to
+ * distinguish unavailable days from a recorded zero.
  */
 internal object StepsDataNormalizer {
 
     /**
-     * Normalize a list of [StepsRecord]s into [StepsSummary]s grouped and summed
-     * by local calendar day.
+     * Maps a single-day [AggregationResult] into a [StepsSummary] for [date].
      *
-     * Days with no covering records are omitted from the result, allowing the
-     * caller to distinguish unavailable days from a recorded zero.
+     * Returns `null` when Health Connect reports no step aggregate for the
+     * requested range, preserving the unavailable-day semantics.
      */
-    fun normalize(
-        records: List<StepsRecord>,
-        zoneId: ZoneId = ZoneId.systemDefault(),
-    ): List<StepsSummary> {
-        if (records.isEmpty()) {
-            return emptyList()
-        }
-
-        val stepsByDate = mutableMapOf<LocalDate, Long>()
-
-        records.forEach { record ->
-            val recordDuration = Duration.between(record.startTime, record.endTime)
-            if (recordDuration.isZero || recordDuration.isNegative) {
-                return@forEach
-            }
-
-            val startDate = record.startTime.atZone(record.startZoneOffset ?: zoneId).toLocalDate()
-            val endDate = record.endTime.atZone(record.endZoneOffset ?: zoneId).toLocalDate()
-
-            if (startDate == endDate) {
-                stepsByDate[startDate] = stepsByDate.getOrDefault(startDate, 0L) + record.count
-                return@forEach
-            }
-
-            distributeAcrossDays(record, startDate, endDate, recordDuration, zoneId)
-                .forEach { (date, portion) ->
-                    stepsByDate[date] = stepsByDate.getOrDefault(date, 0L) + portion
-                }
-        }
-
-        return stepsByDate
-            .map { (date, steps) -> StepsSummary(date = date, steps = steps) }
-            .sortedBy { it.date }
+    fun toStepsSummary(
+        aggregateResult: AggregationResult,
+        date: LocalDate,
+    ): StepsSummary? {
+        val steps = aggregateResult.longValues[StepsRecord.COUNT_TOTAL.metricKey]
+            ?: return null
+        return StepsSummary(date = date, steps = steps)
     }
 
-    private fun distributeAcrossDays(
-        record: StepsRecord,
-        startDate: LocalDate,
-        endDate: LocalDate,
-        totalDuration: Duration,
-        fallbackZoneId: ZoneId,
-    ): List<Pair<LocalDate, Long>> {
-        val portions = mutableListOf<Pair<LocalDate, Long>>()
-        var remainingCount = record.count
-        var currentDate = startDate
-
-        while (!currentDate.isAfter(endDate)) {
-            val dayStart = currentDate.atStartOfDay(fallbackZoneId).toInstant()
-            val dayEnd = currentDate.plusDays(1).atStartOfDay(fallbackZoneId).toInstant()
-
-            val segmentStart = maxOf(record.startTime, dayStart)
-            val segmentEnd = minOf(record.endTime, dayEnd)
-            val segmentDuration = Duration.between(segmentStart, segmentEnd)
-
-            if (!segmentDuration.isZero && !segmentDuration.isNegative) {
-                val isLastDay = currentDate == endDate
-                val portion = if (isLastDay) {
-                    remainingCount
-                } else {
-                    val ratio = segmentDuration.toMillis().toDouble() / totalDuration.toMillis()
-                    val calculated = (record.count * ratio).roundToLong()
-                    calculated
-                }
-
-                if (portion > 0L) {
-                    portions.add(currentDate to portion)
-                    remainingCount -= portion
-                }
-            }
-
-            currentDate = currentDate.plusDays(1)
-        }
-
-        return portions
+    /**
+     * Maps a list of period-grouped aggregate results into [StepsSummary]s.
+     *
+     * Buckets that contain no step aggregate are skipped, and the returned list
+     * is sorted by date.
+     */
+    fun toStepsSummaries(
+        groupedResults: List<AggregationResultGroupedByPeriod>,
+    ): List<StepsSummary> {
+        return groupedResults.mapNotNull { grouped ->
+            val steps = grouped.result.longValues[StepsRecord.COUNT_TOTAL.metricKey]
+                ?: return@mapNotNull null
+            val date = grouped.startTime.toLocalDate()
+            StepsSummary(date = date, steps = steps)
+        }.sortedBy { it.date }
     }
 }
