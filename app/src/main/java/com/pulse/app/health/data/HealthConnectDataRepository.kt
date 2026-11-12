@@ -5,6 +5,7 @@ import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.records.HeartRateVariabilityRmssdRecord
 import androidx.health.connect.client.records.RestingHeartRateRecord
 import androidx.health.connect.client.records.SleepSessionRecord
+import androidx.health.connect.client.records.StepsRecord
 import androidx.health.connect.client.request.ReadRecordsRequest
 import androidx.health.connect.client.time.TimeRangeFilter
 import com.pulse.app.health.data.cache.HealthDataCache
@@ -21,8 +22,8 @@ import java.time.ZoneId
  * [HealthDataRepository] implementation backed by Google Health Connect.
  *
  * Detailed per-metric retrieval logic is added incrementally per issue. Sleep
- * (#5) and heart rate (#6) are implemented; steps (#7) and hydration (#8) are
- * still placeholders. This class establishes the Health Connect boundary,
+ * (#5), heart rate (#6), and steps (#7) are implemented; hydration (#8) is
+ * still a placeholder. This class establishes the Health Connect boundary,
  * result mapping, and error-handling pattern.
  */
 class HealthConnectDataRepository(
@@ -87,14 +88,49 @@ class HealthConnectDataRepository(
     }
 
     override suspend fun readSteps(date: LocalDate): HealthDataResult<StepsSummary> {
-        return readUnavailable()
+        return when (val rangeResult = readStepsRange(date, date)) {
+            is HealthDataResult.Success -> {
+                rangeResult.data.firstOrNull()?.let { HealthDataResult.Success(it) }
+                    ?: HealthDataResult.Unavailable
+            }
+
+            is HealthDataResult.Unavailable -> HealthDataResult.Unavailable
+            is HealthDataResult.PermissionDenied -> HealthDataResult.PermissionDenied
+            is HealthDataResult.Failure -> HealthDataResult.Failure(rangeResult.error)
+        }
     }
 
     override suspend fun readStepsRange(
         startDate: LocalDate,
         endDate: LocalDate,
     ): HealthDataResult<List<StepsSummary>> {
-        return readUnavailable()
+        val currentClient = client ?: return HealthDataResult.Unavailable
+        val zoneId = ZoneId.systemDefault()
+
+        val queryStart = startDate.atStartOfDay(zoneId).toInstant()
+        val queryEnd = endDate.plusDays(1).atStartOfDay(zoneId).toInstant()
+
+        return try {
+            val request = ReadRecordsRequest(
+                recordType = StepsRecord::class,
+                timeRangeFilter = TimeRangeFilter.between(queryStart, queryEnd),
+            )
+            val response = currentClient.readRecords(request)
+            val summaries = StepsDataNormalizer.normalize(response.records, zoneId)
+                .filter { it.date in startDate..endDate }
+
+            if (summaries.isEmpty()) {
+                HealthDataResult.Unavailable
+            } else {
+                val syncedAt = Instant.now()
+                healthDataCache.saveStepsRange(summaries, syncedAt)
+                HealthDataResult.Success(summaries)
+            }
+        } catch (e: SecurityException) {
+            HealthDataResult.PermissionDenied
+        } catch (e: Exception) {
+            HealthDataResult.Failure(e)
+        }
     }
 
     override suspend fun readRestingHeartRate(date: LocalDate): HealthDataResult<RestingHeartRate> {

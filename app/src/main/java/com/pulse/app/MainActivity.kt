@@ -26,6 +26,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.pulse.app.health.permission.HealthConnectPermissionManager
 import com.pulse.app.debug.HeartRateDebugVerification
 import com.pulse.app.debug.SleepDebugVerification
+import com.pulse.app.debug.StepsDebugVerification
 import com.pulse.app.health.permission.HealthPermissionState
 import com.pulse.app.health.permission.HealthPermissionViewModel
 import com.pulse.app.health.permission.HealthPermissionViewModelFactory
@@ -74,6 +75,7 @@ class MainActivity : ComponentActivity() {
 
         SleepDebugVerification.trigger(this)
         HeartRateDebugVerification.trigger(this)
+        StepsDebugVerification.trigger(this)
     }
 
     companion object {
