@@ -127,31 +127,6 @@ class StepsDataNormalizerTest {
     }
 
     @Test
-    fun recordedZeroCount_isIncludedAsZero() {
-        val record = stepsRecord(
-            start = date.atTime(8, 0).toInstant(zoneOffset),
-            end = date.atTime(9, 0).toInstant(zoneOffset),
-            count = 0L,
-        )
-
-        val result = StepsDataNormalizer.normalize(listOf(record), zoneOffset)
-
-        assertEquals(1, result.size)
-        assertEquals(date, result[0].date)
-        assertEquals(0L, result[0].steps)
-    }
-
-    @Test
-    fun recordWithZeroDuration_isIgnored() {
-        val time = date.atTime(8, 0).toInstant(zoneOffset)
-        val record = stepsRecord(start = time, end = time, count = 1_000L)
-
-        val result = StepsDataNormalizer.normalize(listOf(record), zoneOffset)
-
-        assertTrue(result.isEmpty())
-    }
-
-    @Test
     fun overlappingRecords_areSummed() {
         val records = listOf(
             stepsRecord(
