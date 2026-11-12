@@ -56,14 +56,14 @@ class FakeHealthConnectClient : HealthConnectClient {
     override suspend fun updateRecords(records: List<Record>) =
         throw NotImplementedError()
 
-    override suspend fun <T : Record> deleteRecords(
-        recordType: KClass<T>,
+    override suspend fun deleteRecords(
+        recordType: KClass<out Record>,
         recordIdsList: List<String>,
         clientRecordIdsList: List<String>,
     ) = Unit
 
-    override suspend fun <T : Record> deleteRecords(
-        recordType: KClass<T>,
+    override suspend fun deleteRecords(
+        recordType: KClass<out Record>,
         timeRangeFilter: TimeRangeFilter,
     ) = Unit
 
