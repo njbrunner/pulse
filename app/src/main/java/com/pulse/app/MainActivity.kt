@@ -23,7 +23,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.pulse.app.BuildConfig
 import com.pulse.app.health.data.HealthConnectDataRepository
 import com.pulse.app.health.data.cache.RoomHealthDataCache
 import com.pulse.app.health.permission.HealthConnectPermissionManager
@@ -77,7 +76,7 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        if (BuildConfig.DEBUG) {
+        if ((applicationContext.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
             val cache = RoomHealthDataCache(applicationContext)
             val repository = HealthConnectDataRepository(applicationContext, cache)
             debugHealthDataCache = cache
