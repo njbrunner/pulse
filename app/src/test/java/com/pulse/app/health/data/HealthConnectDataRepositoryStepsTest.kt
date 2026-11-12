@@ -3,7 +3,6 @@ package com.pulse.app.health.data
 import android.content.Context
 import androidx.health.connect.client.aggregate.AggregationResult
 import androidx.health.connect.client.aggregate.AggregationResultGroupedByPeriod
-import androidx.health.connect.client.records.StepsRecord
 import com.pulse.app.health.data.model.StepsSummary
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
@@ -13,6 +12,13 @@ import org.junit.Test
 import java.time.LocalDate
 
 class HealthConnectDataRepositoryStepsTest {
+
+    /**
+     * Health Connect's internal key for [StepsRecord.COUNT_TOTAL]. Tests must
+     * construct [AggregationResult] maps directly because [AggregateMetric] does
+     * not expose a public, non-restricted way to obtain the metric key.
+     */
+    private val stepsCountTotalKey = "Steps_count_total"
 
     private val context: Context = mockk(relaxed = true)
     private val cache = FakeHealthDataCache()
@@ -138,7 +144,7 @@ class HealthConnectDataRepositoryStepsTest {
 
     private fun aggregationResult(steps: Long): AggregationResult {
         return AggregationResult(
-            longValues = mapOf(StepsRecord.COUNT_TOTAL.metricKey to steps),
+            longValues = mapOf(stepsCountTotalKey to steps),
             doubleValues = emptyMap(),
             dataOrigins = emptySet(),
         )

@@ -27,8 +27,7 @@ internal object StepsDataNormalizer {
         aggregateResult: AggregationResult,
         date: LocalDate,
     ): StepsSummary? {
-        val steps = aggregateResult.longValues[StepsRecord.COUNT_TOTAL.metricKey]
-            ?: return null
+        val steps = aggregateResult[StepsRecord.COUNT_TOTAL] ?: return null
         return StepsSummary(date = date, steps = steps)
     }
 
@@ -42,8 +41,7 @@ internal object StepsDataNormalizer {
         groupedResults: List<AggregationResultGroupedByPeriod>,
     ): List<StepsSummary> {
         return groupedResults.mapNotNull { grouped ->
-            val steps = grouped.result.longValues[StepsRecord.COUNT_TOTAL.metricKey]
-                ?: return@mapNotNull null
+            val steps = grouped.result[StepsRecord.COUNT_TOTAL] ?: return@mapNotNull null
             val date = grouped.startTime.toLocalDate()
             StepsSummary(date = date, steps = steps)
         }.sortedBy { it.date }
