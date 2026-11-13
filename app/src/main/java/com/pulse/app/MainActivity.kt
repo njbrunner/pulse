@@ -27,6 +27,7 @@ import com.pulse.app.health.data.HealthConnectDataRepository
 import com.pulse.app.health.data.cache.RoomHealthDataCache
 import com.pulse.app.health.permission.HealthConnectPermissionManager
 import com.pulse.app.debug.HeartRateDebugVerification
+import com.pulse.app.debug.HydrationDebugVerification
 import com.pulse.app.debug.SleepDebugVerification
 import com.pulse.app.debug.StepsDebugVerification
 import com.pulse.app.health.permission.HealthPermissionState
@@ -83,6 +84,7 @@ class MainActivity : ComponentActivity() {
             SleepDebugVerification.trigger(this, repository)
             HeartRateDebugVerification.trigger(this, repository)
             StepsDebugVerification.trigger(this, repository)
+            HydrationDebugVerification.trigger(this, repository)
         }
     }
 
