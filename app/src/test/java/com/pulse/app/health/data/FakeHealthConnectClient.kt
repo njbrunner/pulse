@@ -30,6 +30,24 @@ class FakeHealthConnectClient : HealthConnectClient {
         dataOrigins = emptySet(),
     )
     var aggregateGroupByPeriodResponse: List<AggregationResultGroupedByPeriod> = emptyList()
+
+    /**
+     * Per-filter aggregate responses keyed by the set of package names in
+     * [AggregateRequest.dataOriginFilter]. An empty set represents the
+     * unfiltered aggregate. Falls back to [aggregateResponse] when no entry
+     * matches.
+     */
+    var aggregateResponses: Map<Set<String>, AggregationResult> = emptyMap()
+
+    /**
+     * Per-filter grouped-period responses keyed by the set of package names in
+     * [AggregateGroupByPeriodRequest.dataOriginFilter]. An empty set represents
+     * the unfiltered aggregate. Falls back to [aggregateGroupByPeriodResponse]
+     * when no entry matches.
+     */
+    var aggregateGroupByPeriodResponses: Map<Set<String>, List<AggregationResultGroupedByPeriod>> =
+        emptyMap()
+
     var throwSecurityException: Boolean = false
     var throwException: Exception? = null
 
@@ -39,7 +57,8 @@ class FakeHealthConnectClient : HealthConnectClient {
     override suspend fun aggregate(request: AggregateRequest): AggregationResult {
         if (throwSecurityException) throw SecurityException()
         throwException?.let { throw it }
-        return aggregateResponse
+        val key = request.dataOriginFilter.map { it.packageName }.toSet()
+        return aggregateResponses[key] ?: aggregateResponse
     }
 
     override suspend fun aggregateGroupByPeriod(
@@ -47,7 +66,8 @@ class FakeHealthConnectClient : HealthConnectClient {
     ): List<AggregationResultGroupedByPeriod> {
         if (throwSecurityException) throw SecurityException()
         throwException?.let { throw it }
-        return aggregateGroupByPeriodResponse
+        val key = request.dataOriginFilter.map { it.packageName }.toSet()
+        return aggregateGroupByPeriodResponses[key] ?: aggregateGroupByPeriodResponse
     }
 
     override suspend fun insertRecords(records: List<Record>) =

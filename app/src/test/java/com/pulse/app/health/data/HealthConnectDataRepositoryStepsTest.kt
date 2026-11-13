@@ -3,6 +3,7 @@ package com.pulse.app.health.data
 import android.content.Context
 import androidx.health.connect.client.aggregate.AggregationResult
 import androidx.health.connect.client.aggregate.AggregationResultGroupedByPeriod
+import androidx.health.connect.client.records.metadata.DataOrigin
 import com.pulse.app.health.data.model.StepsSummary
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
@@ -19,6 +20,10 @@ class HealthConnectDataRepositoryStepsTest {
      * not expose a public, non-restricted way to obtain the metric key.
      */
     private val stepsCountTotalKey = "Steps_count_total"
+
+    private val fitbitPackage = PreferredStepsDataOriginPolicy.FITBIT_PACKAGE
+    private val fitbitKey = setOf(fitbitPackage)
+    private val emptyKey = emptySet<String>()
 
     private val context: Context = mockk(relaxed = true)
     private val cache = FakeHealthDataCache()
@@ -72,6 +77,71 @@ class HealthConnectDataRepositoryStepsTest {
         assertTrue(result is HealthDataResult.Failure)
         assertEquals(error, (result as HealthDataResult.Failure).error)
         assertTrue(cache.savedSteps.isEmpty())
+    }
+
+    @Test
+    fun readSteps_preferredFitbitAvailable_returnsFitbitValueAndCaches() = runTest {
+        client.aggregateResponses = mapOf(
+            fitbitKey to aggregationResult(4_853L),
+            emptyKey to aggregationResult(8_810L),
+        )
+
+        val result = repository.readSteps(today)
+
+        assertEquals(HealthDataResult.Success(StepsSummary(today, 4_853L)), result)
+        assertEquals(1, cache.savedSteps.size)
+        assertEquals(StepsSummary(today, 4_853L), cache.savedSteps.first().first)
+    }
+
+    @Test
+    fun readSteps_preferredValueDiffersFromUnfiltered_preferredValueWins() = runTest {
+        client.aggregateResponses = mapOf(
+            fitbitKey to aggregationResult(4_896L),
+            emptyKey to aggregationResult(8_155L),
+        )
+
+        val result = repository.readSteps(today)
+
+        assertEquals(HealthDataResult.Success(StepsSummary(today, 4_896L)), result)
+    }
+
+    @Test
+    fun readSteps_preferredUnavailable_fallsBackToUnfilteredAggregate() = runTest {
+        client.aggregateResponses = mapOf(
+            fitbitKey to emptyAggregationResult(),
+            emptyKey to aggregationResult(7_854L),
+        )
+
+        val result = repository.readSteps(today)
+
+        assertEquals(HealthDataResult.Success(StepsSummary(today, 7_854L)), result)
+        assertEquals(1, cache.savedSteps.size)
+        assertEquals(StepsSummary(today, 7_854L), cache.savedSteps.first().first)
+    }
+
+    @Test
+    fun readSteps_neitherPreferredNorUnfilteredAvailable_returnsUnavailable() = runTest {
+        client.aggregateResponses = mapOf(
+            fitbitKey to emptyAggregationResult(),
+            emptyKey to emptyAggregationResult(),
+        )
+
+        val result = repository.readSteps(today)
+
+        assertEquals(HealthDataResult.Unavailable, result)
+        assertTrue(cache.savedSteps.isEmpty())
+    }
+
+    @Test
+    fun readSteps_zeroPreferredAggregate_preservedAsZero() = runTest {
+        client.aggregateResponses = mapOf(
+            fitbitKey to aggregationResult(0L),
+            emptyKey to aggregationResult(8_155L),
+        )
+
+        val result = repository.readSteps(today)
+
+        assertEquals(HealthDataResult.Success(StepsSummary(today, 0L)), result)
     }
 
     @Test
@@ -138,6 +208,138 @@ class HealthConnectDataRepositoryStepsTest {
 
         assertEquals(
             HealthDataResult.Success(listOf(StepsSummary(day, 5_000L))),
+            result,
+        )
+    }
+
+    @Test
+    fun readStepsRange_preferredAvailableEveryDay_returnsPreferredValues() = runTest {
+        val day1 = today.minusDays(2)
+        val day2 = today.minusDays(1)
+        val day3 = today
+        client.aggregateGroupByPeriodResponses = mapOf(
+            fitbitKey to listOf(
+                groupedResult(day3, 4_800L),
+                groupedResult(day2, 4_700L),
+                groupedResult(day1, 4_600L),
+            ),
+            emptyKey to emptyList(),
+        )
+
+        val result = repository.readStepsRange(day1, day3)
+
+        val expected = listOf(
+            StepsSummary(day1, 4_600L),
+            StepsSummary(day2, 4_700L),
+            StepsSummary(day3, 4_800L),
+        )
+        assertEquals(HealthDataResult.Success(expected), result)
+        assertEquals(expected, cache.savedStepsRanges.first().first)
+    }
+
+    @Test
+    fun readStepsRange_preferredMissingOneDay_fallsBackForThatDayOnly() = runTest {
+        val day1 = today.minusDays(2)
+        val day2 = today.minusDays(1)
+        val day3 = today
+        client.aggregateGroupByPeriodResponses = mapOf(
+            fitbitKey to listOf(
+                groupedResult(day3, 4_800L),
+                // day2 has no Fitbit data.
+                groupedResult(day1, 4_600L),
+            ),
+            emptyKey to listOf(
+                groupedResult(day2, 7_900L),
+            ),
+        )
+
+        val result = repository.readStepsRange(day1, day3)
+
+        val expected = listOf(
+            StepsSummary(day1, 4_600L),
+            StepsSummary(day2, 7_900L),
+            StepsSummary(day3, 4_800L),
+        )
+        assertEquals(HealthDataResult.Success(expected), result)
+    }
+
+    @Test
+    fun readStepsRange_bothSourcesMissingOneDay_omitsThatDay() = runTest {
+        val day1 = today.minusDays(2)
+        val day2 = today.minusDays(1)
+        val day3 = today
+        client.aggregateGroupByPeriodResponses = mapOf(
+            fitbitKey to listOf(
+                groupedResult(day3, 4_800L),
+                groupedResult(day1, 4_600L),
+            ),
+            emptyKey to listOf(
+                // day2 also has no unfiltered data.
+                groupedResult(day1, 4_600L),
+            ),
+        )
+
+        val result = repository.readStepsRange(day1, day3)
+
+        val expected = listOf(
+            StepsSummary(day1, 4_600L),
+            StepsSummary(day3, 4_800L),
+        )
+        assertEquals(HealthDataResult.Success(expected), result)
+    }
+
+    @Test
+    fun readStepsRange_resultsSortedByDate() = runTest {
+        val day1 = today.minusDays(1)
+        val day2 = today
+        client.aggregateGroupByPeriodResponses = mapOf(
+            fitbitKey to listOf(
+                // Return out of order.
+                groupedResult(day2, 9_000L),
+                groupedResult(day1, 10_000L),
+            ),
+            emptyKey to emptyList(),
+        )
+
+        val result = repository.readStepsRange(day1, day2)
+
+        val expected = listOf(
+            StepsSummary(day1, 10_000L),
+            StepsSummary(day2, 9_000L),
+        )
+        assertEquals(HealthDataResult.Success(expected), result)
+    }
+
+    @Test
+    fun readStepsRange_zeroAggregate_preservedAsZero() = runTest {
+        val day = today
+        client.aggregateGroupByPeriodResponses = mapOf(
+            fitbitKey to listOf(groupedResult(day, 0L)),
+            emptyKey to emptyList(),
+        )
+
+        val result = repository.readStepsRange(day, day)
+
+        assertEquals(
+            HealthDataResult.Success(listOf(StepsSummary(day, 0L))),
+            result,
+        )
+    }
+
+    @Test
+    fun readStepsRange_unknownOriginDoesNotBecomePreferred() = runTest {
+        val unknownPackage = "com.example.other"
+        val day = today
+        client.aggregateGroupByPeriodResponses = mapOf(
+            setOf(unknownPackage) to listOf(groupedResult(day, 1_000L)),
+            emptyKey to listOf(groupedResult(day, 2_000L)),
+        )
+
+        val result = repository.readStepsRange(day, day)
+
+        // Unknown origin is not queried as preferred; fallback unfiltered is used.
+        assertEquals(
+            HealthDataResult.Success(listOf(StepsSummary(day, 2_000L))),
             result,
         )
     }

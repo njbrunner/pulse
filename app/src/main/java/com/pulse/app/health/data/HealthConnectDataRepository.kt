@@ -34,6 +34,8 @@ class HealthConnectDataRepository(
     private val applicationContext: Context,
     private val healthDataCache: HealthDataCache,
     private val healthConnectClient: HealthConnectClient? = null,
+    private val preferredStepsDataOriginPolicy: PreferredStepsDataOriginPolicy =
+        PreferredStepsDataOriginPolicy(),
 ) : HealthDataRepository {
 
     private val client: HealthConnectClient? by lazy {
@@ -96,15 +98,22 @@ class HealthConnectDataRepository(
         val zoneId = ZoneId.systemDefault()
 
         return try {
-            val request = AggregateRequest(
-                metrics = setOf(StepsRecord.COUNT_TOTAL),
-                timeRangeFilter = TimeRangeFilter.between(
-                    date.atStartOfDay(zoneId).toInstant(),
-                    date.plusDays(1).atStartOfDay(zoneId).toInstant(),
-                ),
+            val timeRangeFilter = TimeRangeFilter.between(
+                date.atStartOfDay(zoneId).toInstant(),
+                date.plusDays(1).atStartOfDay(zoneId).toInstant(),
             )
-            val response = currentClient.aggregate(request)
-            val summary = StepsDataNormalizer.toStepsSummary(response, date)
+
+            // 1. Prefer wearable data (e.g., Fitbit) when available.
+            val summary = readPreferredSteps(currentClient, timeRangeFilter, date)
+                // 2. Fall back to Health Connect's standard deduplicated aggregate.
+                ?: run {
+                    val request = AggregateRequest(
+                        metrics = setOf(StepsRecord.COUNT_TOTAL),
+                        timeRangeFilter = timeRangeFilter,
+                    )
+                    val response = currentClient.aggregate(request)
+                    StepsDataNormalizer.toStepsSummary(response, date)
+                }
 
             if (summary == null) {
                 HealthDataResult.Unavailable
@@ -120,6 +129,28 @@ class HealthConnectDataRepository(
         }
     }
 
+    /**
+     * Queries each configured preferred wearable origin for [date] and returns
+     * the first origin that reports a step aggregate. `null` means no preferred
+     * wearable data is available for this date.
+     */
+    private suspend fun readPreferredSteps(
+        client: HealthConnectClient,
+        timeRangeFilter: TimeRangeFilter,
+        date: LocalDate,
+    ): StepsSummary? {
+        for (origin in preferredStepsDataOriginPolicy.knownDataOrigins()) {
+            val request = AggregateRequest(
+                metrics = setOf(StepsRecord.COUNT_TOTAL),
+                timeRangeFilter = timeRangeFilter,
+                dataOriginFilter = setOf(origin),
+            )
+            val response = client.aggregate(request)
+            StepsDataNormalizer.toStepsSummary(response, date)?.let { return it }
+        }
+        return null
+    }
+
     override suspend fun readStepsRange(
         startDate: LocalDate,
         endDate: LocalDate,
@@ -127,17 +158,46 @@ class HealthConnectDataRepository(
         val currentClient = client ?: return HealthDataResult.Unavailable
 
         return try {
-            val request = AggregateGroupByPeriodRequest(
+            val timeRangeFilter = TimeRangeFilter.between(
+                startDate.atStartOfDay(),
+                endDate.plusDays(1).atStartOfDay(),
+            )
+
+            // 1. Preferred wearable aggregate per day.
+            val preferredByDate = mutableMapOf<LocalDate, StepsSummary>()
+            for (origin in preferredStepsDataOriginPolicy.knownDataOrigins()) {
+                val preferredRequest = AggregateGroupByPeriodRequest(
+                    metrics = setOf(StepsRecord.COUNT_TOTAL),
+                    timeRangeFilter = timeRangeFilter,
+                    timeRangeSlicer = Period.ofDays(1),
+                    dataOriginFilter = setOf(origin),
+                )
+                val preferredResponse = currentClient.aggregateGroupByPeriod(preferredRequest)
+                StepsDataNormalizer.toStepsSummaries(preferredResponse)
+                    .filter { it.date in startDate..endDate }
+                    .forEach { summary -> preferredByDate.putIfAbsent(summary.date, summary) }
+            }
+
+            // 2. Fallback aggregate per day for dates without preferred data.
+            val fallbackRequest = AggregateGroupByPeriodRequest(
                 metrics = setOf(StepsRecord.COUNT_TOTAL),
-                timeRangeFilter = TimeRangeFilter.between(
-                    startDate.atStartOfDay(),
-                    endDate.plusDays(1).atStartOfDay(),
-                ),
+                timeRangeFilter = timeRangeFilter,
                 timeRangeSlicer = Period.ofDays(1),
             )
-            val response = currentClient.aggregateGroupByPeriod(request)
-            val summaries = StepsDataNormalizer.toStepsSummaries(response)
+            val fallbackResponse = currentClient.aggregateGroupByPeriod(fallbackRequest)
+            val fallbackByDate = StepsDataNormalizer.toStepsSummaries(fallbackResponse)
                 .filter { it.date in startDate..endDate }
+                .associateBy { it.date }
+
+            val summaries = mutableListOf<StepsSummary>()
+            var currentDate = startDate
+            while (!currentDate.isAfter(endDate)) {
+                val summary = preferredByDate[currentDate] ?: fallbackByDate[currentDate]
+                if (summary != null) {
+                    summaries.add(summary)
+                }
+                currentDate = currentDate.plusDays(1)
+            }
 
             if (summaries.isEmpty()) {
                 HealthDataResult.Unavailable
