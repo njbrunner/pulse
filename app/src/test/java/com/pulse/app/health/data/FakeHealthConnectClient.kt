@@ -15,6 +15,7 @@ import androidx.health.connect.client.response.ChangesResponse
 import androidx.health.connect.client.response.ReadRecordResponse
 import androidx.health.connect.client.response.ReadRecordsResponse
 import androidx.health.connect.client.time.TimeRangeFilter
+import java.lang.reflect.Method
 import kotlin.reflect.KClass
 
 /**
@@ -78,12 +79,20 @@ class FakeHealthConnectClient : HealthConnectClient {
      */
     private fun Any.originFilterKey(): Set<String> {
         return runCatching {
-            val method = this::class.java.getDeclaredMethod("getDataOriginFilter\$connect_client_release")
+            val method = dataOriginFilterGetter()
             method.trySetAccessible()
             @Suppress("UNCHECKED_CAST")
             val origins = method.invoke(this) as Set<DataOrigin>
             origins.map { it.packageName }.toSet()
         }.getOrDefault(emptySet())
+    }
+
+    private fun Class<*>.dataOriginFilterGetter(): Method {
+        return runCatching {
+            getDeclaredMethod("getDataOriginFilter\$connect_client_release")
+        }.recoverCatching {
+            getDeclaredMethod("getDataOriginFilter")
+        }.getOrThrow()
     }
 
     override suspend fun insertRecords(records: List<Record>) =
