@@ -6,7 +6,6 @@ import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
 import com.pulse.app.health.data.HealthConnectDataRepository
 import com.pulse.app.health.data.HealthDataResult
-import com.pulse.app.health.data.cache.RoomHealthDataCache
 import com.pulse.app.health.data.model.SleepSummary
 import java.time.LocalDate
 
@@ -21,12 +20,8 @@ internal object SleepDebugVerification {
 
     private const val TAG = "PulseSleepDebug"
 
-    fun trigger(activity: ComponentActivity) {
+    fun trigger(activity: ComponentActivity, repository: HealthConnectDataRepository) {
         activity.lifecycleScope.launch {
-            val context = activity.applicationContext
-            val cache = RoomHealthDataCache(context)
-            val repository = HealthConnectDataRepository(context, cache)
-
             // Request today's attributed sleep. For an overnight session this is the
             // calendar day containing the session midpoint, which is normally the wake
             // date (e.g. Oct 27 evening -> Oct 28 morning is attributed to Oct 28).

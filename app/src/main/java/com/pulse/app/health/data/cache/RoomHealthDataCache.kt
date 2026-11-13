@@ -237,4 +237,13 @@ class RoomHealthDataCache internal constructor(
         ),
         syncedAt = Instant.ofEpochMilli(syncedAtMillis),
     )
+
+    /**
+     * Closes the underlying Room database. This is intended for lifecycle-managed
+     * debugging scenarios; production callers should generally rely on the process
+     * lifecycle and a single cache instance.
+     */
+    fun close() {
+        db.close()
+    }
 }
