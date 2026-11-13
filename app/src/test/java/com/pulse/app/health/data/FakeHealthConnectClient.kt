@@ -5,6 +5,7 @@ import androidx.health.connect.client.PermissionController
 import androidx.health.connect.client.aggregate.AggregationResult
 import androidx.health.connect.client.aggregate.AggregationResultGroupedByPeriod
 import androidx.health.connect.client.records.Record
+import androidx.health.connect.client.records.metadata.DataOrigin
 import androidx.health.connect.client.request.AggregateGroupByDurationRequest
 import androidx.health.connect.client.request.AggregateGroupByPeriodRequest
 import androidx.health.connect.client.request.AggregateRequest
@@ -57,7 +58,7 @@ class FakeHealthConnectClient : HealthConnectClient {
     override suspend fun aggregate(request: AggregateRequest): AggregationResult {
         if (throwSecurityException) throw SecurityException()
         throwException?.let { throw it }
-        val key = request.dataOriginFilter.map { it.packageName }.toSet()
+        val key = request.originFilterKey()
         return aggregateResponses[key] ?: aggregateResponse
     }
 
@@ -66,8 +67,23 @@ class FakeHealthConnectClient : HealthConnectClient {
     ): List<AggregationResultGroupedByPeriod> {
         if (throwSecurityException) throw SecurityException()
         throwException?.let { throw it }
-        val key = request.dataOriginFilter.map { it.packageName }.toSet()
+        val key = request.originFilterKey()
         return aggregateGroupByPeriodResponses[key] ?: aggregateGroupByPeriodResponse
+    }
+
+    /**
+     * Reads the internal [dataOriginFilter] from an aggregate request via
+     * reflection because the property is module-internal in the Health Connect
+     * SDK and not directly accessible from Pulse tests.
+     */
+    private fun Any.originFilterKey(): Set<String> {
+        return runCatching {
+            val method = this::class.java.getDeclaredMethod("getDataOriginFilter\$connect_client_release")
+            method.trySetAccessible()
+            @Suppress("UNCHECKED_CAST")
+            val origins = method.invoke(this) as Set<DataOrigin>
+            origins.map { it.packageName }.toSet()
+        }.getOrDefault(emptySet())
     }
 
     override suspend fun insertRecords(records: List<Record>) =
