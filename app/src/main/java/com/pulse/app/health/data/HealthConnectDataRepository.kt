@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.records.HeartRateRecord
 import androidx.health.connect.client.records.HeartRateVariabilityRmssdRecord
+import androidx.health.connect.client.records.HydrationRecord
 import androidx.health.connect.client.records.RestingHeartRateRecord
 import androidx.health.connect.client.records.SleepSessionRecord
 import androidx.health.connect.client.records.StepsRecord
@@ -26,9 +27,9 @@ import java.time.ZoneId
  * [HealthDataRepository] implementation backed by Google Health Connect.
  *
  * Detailed per-metric retrieval logic is added incrementally per issue. Sleep
- * (#5), heart rate (#6), and steps (#7) are implemented; hydration (#8) is
- * still a placeholder. This class establishes the Health Connect boundary,
- * result mapping, and error-handling pattern.
+ * (#5), heart rate (#6), steps (#7), and hydration (#8) are implemented. This
+ * class establishes the Health Connect boundary, result mapping, and
+ * error-handling pattern.
  */
 class HealthConnectDataRepository(
     private val applicationContext: Context,
@@ -381,20 +382,66 @@ class HealthConnectDataRepository(
     }
 
     override suspend fun readHydration(date: LocalDate): HealthDataResult<HydrationSummary> {
-        return readUnavailable()
+        val currentClient = client ?: return HealthDataResult.Unavailable
+        val zoneId = ZoneId.systemDefault()
+
+        return try {
+            val timeRangeFilter = TimeRangeFilter.between(
+                date.atStartOfDay(zoneId).toInstant(),
+                date.plusDays(1).atStartOfDay(zoneId).toInstant(),
+            )
+            val request = AggregateRequest(
+                metrics = setOf(HydrationRecord.VOLUME_TOTAL),
+                timeRangeFilter = timeRangeFilter,
+            )
+            val response = currentClient.aggregate(request)
+            val summary = HydrationDataNormalizer.toHydrationSummary(response, date)
+
+            if (summary == null) {
+                HealthDataResult.Unavailable
+            } else {
+                val syncedAt = Instant.now()
+                healthDataCache.saveHydration(summary, syncedAt)
+                HealthDataResult.Success(summary)
+            }
+        } catch (e: SecurityException) {
+            HealthDataResult.PermissionDenied
+        } catch (e: Exception) {
+            HealthDataResult.Failure(e)
+        }
     }
 
     override suspend fun readHydrationRange(
         startDate: LocalDate,
         endDate: LocalDate,
     ): HealthDataResult<List<HydrationSummary>> {
-        return readUnavailable()
-    }
+        val currentClient = client ?: return HealthDataResult.Unavailable
 
-    private fun <T> readUnavailable(): HealthDataResult<T> {
-        return when (client) {
-            null -> HealthDataResult.Unavailable
-            else -> HealthDataResult.Unavailable
+        return try {
+            val timeRangeFilter = TimeRangeFilter.between(
+                startDate.atStartOfDay(),
+                endDate.plusDays(1).atStartOfDay(),
+            )
+            val request = AggregateGroupByPeriodRequest(
+                metrics = setOf(HydrationRecord.VOLUME_TOTAL),
+                timeRangeFilter = timeRangeFilter,
+                timeRangeSlicer = Period.ofDays(1),
+            )
+            val response = currentClient.aggregateGroupByPeriod(request)
+            val summaries = HydrationDataNormalizer.toHydrationSummaries(response)
+                .filter { it.date in startDate..endDate }
+
+            if (summaries.isEmpty()) {
+                HealthDataResult.Unavailable
+            } else {
+                val syncedAt = Instant.now()
+                healthDataCache.saveHydrationRange(summaries, syncedAt)
+                HealthDataResult.Success(summaries)
+            }
+        } catch (e: SecurityException) {
+            HealthDataResult.PermissionDenied
+        } catch (e: Exception) {
+            HealthDataResult.Failure(e)
         }
     }
 }
