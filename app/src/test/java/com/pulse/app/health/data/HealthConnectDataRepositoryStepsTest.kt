@@ -3,7 +3,11 @@ package com.pulse.app.health.data
 import android.content.Context
 import androidx.health.connect.client.aggregate.AggregationResult
 import androidx.health.connect.client.aggregate.AggregationResultGroupedByPeriod
+import androidx.health.connect.client.records.StepsRecord
 import androidx.health.connect.client.records.metadata.DataOrigin
+import androidx.health.connect.client.request.AggregateGroupByPeriodRequest
+import androidx.health.connect.client.request.AggregateRequest
+import androidx.health.connect.client.time.TimeRangeFilter
 import com.pulse.app.health.data.model.StepsSummary
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
@@ -11,6 +15,8 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.LocalDate
+import java.time.Period
+import java.time.ZoneId
 
 class HealthConnectDataRepositoryStepsTest {
 
@@ -22,8 +28,7 @@ class HealthConnectDataRepositoryStepsTest {
     private val stepsCountTotalKey = "Steps_count_total"
 
     private val fitbitPackage = PreferredStepsDataOriginPolicy.FITBIT_PACKAGE
-    private val fitbitKey = setOf(fitbitPackage)
-    private val emptyKey = emptySet<String>()
+    private val fitbitOrigin = DataOrigin(fitbitPackage)
 
     private val context: Context = mockk(relaxed = true)
     private val cache = FakeHealthDataCache()
@@ -35,6 +40,7 @@ class HealthConnectDataRepositoryStepsTest {
     )
 
     private val today = LocalDate.of(2026, 10, 28)
+    private val zoneId = ZoneId.systemDefault()
 
     @Test
     fun readSteps_withCountTotal_returnsSuccessAndCaches() = runTest {
@@ -82,8 +88,8 @@ class HealthConnectDataRepositoryStepsTest {
     @Test
     fun readSteps_preferredFitbitAvailable_returnsFitbitValueAndCaches() = runTest {
         client.aggregateResponses = mapOf(
-            fitbitKey to aggregationResult(4_853L),
-            emptyKey to aggregationResult(8_810L),
+            singleDayPreferredRequest(today) to aggregationResult(4_853L),
+            singleDayFallbackRequest(today) to aggregationResult(8_810L),
         )
 
         val result = repository.readSteps(today)
@@ -96,8 +102,8 @@ class HealthConnectDataRepositoryStepsTest {
     @Test
     fun readSteps_preferredValueDiffersFromUnfiltered_preferredValueWins() = runTest {
         client.aggregateResponses = mapOf(
-            fitbitKey to aggregationResult(4_896L),
-            emptyKey to aggregationResult(8_155L),
+            singleDayPreferredRequest(today) to aggregationResult(4_896L),
+            singleDayFallbackRequest(today) to aggregationResult(8_155L),
         )
 
         val result = repository.readSteps(today)
@@ -108,8 +114,8 @@ class HealthConnectDataRepositoryStepsTest {
     @Test
     fun readSteps_preferredUnavailable_fallsBackToUnfilteredAggregate() = runTest {
         client.aggregateResponses = mapOf(
-            fitbitKey to emptyAggregationResult(),
-            emptyKey to aggregationResult(7_854L),
+            singleDayPreferredRequest(today) to emptyAggregationResult(),
+            singleDayFallbackRequest(today) to aggregationResult(7_854L),
         )
 
         val result = repository.readSteps(today)
@@ -122,8 +128,8 @@ class HealthConnectDataRepositoryStepsTest {
     @Test
     fun readSteps_neitherPreferredNorUnfilteredAvailable_returnsUnavailable() = runTest {
         client.aggregateResponses = mapOf(
-            fitbitKey to emptyAggregationResult(),
-            emptyKey to emptyAggregationResult(),
+            singleDayPreferredRequest(today) to emptyAggregationResult(),
+            singleDayFallbackRequest(today) to emptyAggregationResult(),
         )
 
         val result = repository.readSteps(today)
@@ -135,8 +141,8 @@ class HealthConnectDataRepositoryStepsTest {
     @Test
     fun readSteps_zeroPreferredAggregate_preservedAsZero() = runTest {
         client.aggregateResponses = mapOf(
-            fitbitKey to aggregationResult(0L),
-            emptyKey to aggregationResult(8_155L),
+            singleDayPreferredRequest(today) to aggregationResult(0L),
+            singleDayFallbackRequest(today) to aggregationResult(8_155L),
         )
 
         val result = repository.readSteps(today)
@@ -218,12 +224,12 @@ class HealthConnectDataRepositoryStepsTest {
         val day2 = today.minusDays(1)
         val day3 = today
         client.aggregateGroupByPeriodResponses = mapOf(
-            fitbitKey to listOf(
+            rangePreferredRequest(day1, day3) to listOf(
                 groupedResult(day3, 4_800L),
                 groupedResult(day2, 4_700L),
                 groupedResult(day1, 4_600L),
             ),
-            emptyKey to emptyList(),
+            rangeFallbackRequest(day1, day3) to emptyList(),
         )
 
         val result = repository.readStepsRange(day1, day3)
@@ -243,12 +249,12 @@ class HealthConnectDataRepositoryStepsTest {
         val day2 = today.minusDays(1)
         val day3 = today
         client.aggregateGroupByPeriodResponses = mapOf(
-            fitbitKey to listOf(
+            rangePreferredRequest(day1, day3) to listOf(
                 groupedResult(day3, 4_800L),
                 // day2 has no Fitbit data.
                 groupedResult(day1, 4_600L),
             ),
-            emptyKey to listOf(
+            rangeFallbackRequest(day1, day3) to listOf(
                 groupedResult(day2, 7_900L),
             ),
         )
@@ -269,11 +275,11 @@ class HealthConnectDataRepositoryStepsTest {
         val day2 = today.minusDays(1)
         val day3 = today
         client.aggregateGroupByPeriodResponses = mapOf(
-            fitbitKey to listOf(
+            rangePreferredRequest(day1, day3) to listOf(
                 groupedResult(day3, 4_800L),
                 groupedResult(day1, 4_600L),
             ),
-            emptyKey to listOf(
+            rangeFallbackRequest(day1, day3) to listOf(
                 // day2 also has no unfiltered data.
                 groupedResult(day1, 4_600L),
             ),
@@ -293,12 +299,12 @@ class HealthConnectDataRepositoryStepsTest {
         val day1 = today.minusDays(1)
         val day2 = today
         client.aggregateGroupByPeriodResponses = mapOf(
-            fitbitKey to listOf(
+            rangePreferredRequest(day1, day2) to listOf(
                 // Return out of order.
                 groupedResult(day2, 9_000L),
                 groupedResult(day1, 10_000L),
             ),
-            emptyKey to emptyList(),
+            rangeFallbackRequest(day1, day2) to emptyList(),
         )
 
         val result = repository.readStepsRange(day1, day2)
@@ -314,8 +320,8 @@ class HealthConnectDataRepositoryStepsTest {
     fun readStepsRange_zeroAggregate_preservedAsZero() = runTest {
         val day = today
         client.aggregateGroupByPeriodResponses = mapOf(
-            fitbitKey to listOf(groupedResult(day, 0L)),
-            emptyKey to emptyList(),
+            rangePreferredRequest(day, day) to listOf(groupedResult(day, 0L)),
+            rangeFallbackRequest(day, day) to emptyList(),
         )
 
         val result = repository.readStepsRange(day, day)
@@ -331,8 +337,8 @@ class HealthConnectDataRepositoryStepsTest {
         val unknownPackage = "com.example.other"
         val day = today
         client.aggregateGroupByPeriodResponses = mapOf(
-            setOf(unknownPackage) to listOf(groupedResult(day, 1_000L)),
-            emptyKey to listOf(groupedResult(day, 2_000L)),
+            rangeRequest(day, day, setOf(DataOrigin(unknownPackage))) to listOf(groupedResult(day, 1_000L)),
+            rangeFallbackRequest(day, day) to listOf(groupedResult(day, 2_000L)),
         )
 
         val result = repository.readStepsRange(day, day)
@@ -341,6 +347,52 @@ class HealthConnectDataRepositoryStepsTest {
         assertEquals(
             HealthDataResult.Success(listOf(StepsSummary(day, 2_000L))),
             result,
+        )
+    }
+
+    private fun singleDayPreferredRequest(date: LocalDate): AggregateRequest {
+        return AggregateRequest(
+            metrics = setOf(StepsRecord.COUNT_TOTAL),
+            timeRangeFilter = TimeRangeFilter.between(
+                date.atStartOfDay(zoneId).toInstant(),
+                date.plusDays(1).atStartOfDay(zoneId).toInstant(),
+            ),
+            dataOriginFilter = setOf(fitbitOrigin),
+        )
+    }
+
+    private fun singleDayFallbackRequest(date: LocalDate): AggregateRequest {
+        return AggregateRequest(
+            metrics = setOf(StepsRecord.COUNT_TOTAL),
+            timeRangeFilter = TimeRangeFilter.between(
+                date.atStartOfDay(zoneId).toInstant(),
+                date.plusDays(1).atStartOfDay(zoneId).toInstant(),
+            ),
+            dataOriginFilter = emptySet(),
+        )
+    }
+
+    private fun rangePreferredRequest(startDate: LocalDate, endDate: LocalDate): AggregateGroupByPeriodRequest {
+        return rangeRequest(startDate, endDate, setOf(fitbitOrigin))
+    }
+
+    private fun rangeFallbackRequest(startDate: LocalDate, endDate: LocalDate): AggregateGroupByPeriodRequest {
+        return rangeRequest(startDate, endDate, emptySet())
+    }
+
+    private fun rangeRequest(
+        startDate: LocalDate,
+        endDate: LocalDate,
+        dataOriginFilter: Set<DataOrigin>,
+    ): AggregateGroupByPeriodRequest {
+        return AggregateGroupByPeriodRequest(
+            metrics = setOf(StepsRecord.COUNT_TOTAL),
+            timeRangeFilter = TimeRangeFilter.between(
+                startDate.atStartOfDay(),
+                endDate.plusDays(1).atStartOfDay(),
+            ),
+            timeRangeSlicer = Period.ofDays(1),
+            dataOriginFilter = dataOriginFilter,
         )
     }
 

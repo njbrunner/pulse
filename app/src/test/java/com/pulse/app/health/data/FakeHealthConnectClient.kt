@@ -5,7 +5,6 @@ import androidx.health.connect.client.PermissionController
 import androidx.health.connect.client.aggregate.AggregationResult
 import androidx.health.connect.client.aggregate.AggregationResultGroupedByPeriod
 import androidx.health.connect.client.records.Record
-import androidx.health.connect.client.records.metadata.DataOrigin
 import androidx.health.connect.client.request.AggregateGroupByDurationRequest
 import androidx.health.connect.client.request.AggregateGroupByPeriodRequest
 import androidx.health.connect.client.request.AggregateRequest
@@ -21,6 +20,10 @@ import kotlin.reflect.KClass
  * Test double for [HealthConnectClient] that supports the aggregate APIs used
  * by Pulse Steps tests.
  *
+ * Responses can be configured per exact request object via [aggregateResponses]
+ * and [aggregateGroupByPeriodResponses], with fallback defaults provided by
+ * [aggregateResponse] and [aggregateGroupByPeriodResponse].
+ *
  * All other methods throw [NotImplementedError].
  */
 class FakeHealthConnectClient : HealthConnectClient {
@@ -33,21 +36,21 @@ class FakeHealthConnectClient : HealthConnectClient {
     var aggregateGroupByPeriodResponse: List<AggregationResultGroupedByPeriod> = emptyList()
 
     /**
-     * Per-filter aggregate responses keyed by the set of package names in
-     * [AggregateRequest.dataOriginFilter]. An empty set represents the
-     * unfiltered aggregate. Falls back to [aggregateResponse] when no entry
-     * matches.
+     * Per-request aggregate responses keyed by the exact [AggregateRequest]
+     * received. Falls back to [aggregateResponse] when the request is not in
+     * the map.
      */
-    var aggregateResponses: Map<Set<String>, AggregationResult> = emptyMap()
+    var aggregateResponses: Map<AggregateRequest, AggregationResult> = emptyMap()
 
     /**
-     * Per-filter grouped-period responses keyed by the set of package names in
-     * [AggregateGroupByPeriodRequest.dataOriginFilter]. An empty set represents
-     * the unfiltered aggregate. Falls back to [aggregateGroupByPeriodResponse]
-     * when no entry matches.
+     * Per-request grouped-period responses keyed by the exact
+     * [AggregateGroupByPeriodRequest] received. Falls back to
+     * [aggregateGroupByPeriodResponse] when the request is not in the map.
      */
-    var aggregateGroupByPeriodResponses: Map<Set<String>, List<AggregationResultGroupedByPeriod>> =
-        emptyMap()
+    var aggregateGroupByPeriodResponses: Map<
+        AggregateGroupByPeriodRequest,
+        List<AggregationResultGroupedByPeriod>,
+        > = emptyMap()
 
     var throwSecurityException: Boolean = false
     var throwException: Exception? = null
@@ -58,8 +61,7 @@ class FakeHealthConnectClient : HealthConnectClient {
     override suspend fun aggregate(request: AggregateRequest): AggregationResult {
         if (throwSecurityException) throw SecurityException()
         throwException?.let { throw it }
-        val key = request.originFilterKey()
-        return aggregateResponses[key] ?: aggregateResponse
+        return aggregateResponses[request] ?: aggregateResponse
     }
 
     override suspend fun aggregateGroupByPeriod(
@@ -67,23 +69,7 @@ class FakeHealthConnectClient : HealthConnectClient {
     ): List<AggregationResultGroupedByPeriod> {
         if (throwSecurityException) throw SecurityException()
         throwException?.let { throw it }
-        val key = request.originFilterKey()
-        return aggregateGroupByPeriodResponses[key] ?: aggregateGroupByPeriodResponse
-    }
-
-    /**
-     * Reads the internal [dataOriginFilter] from an aggregate request via
-     * reflection because the property is module-internal in the Health Connect
-     * SDK and not directly accessible from Pulse tests.
-     */
-    private fun Any.originFilterKey(): Set<String> {
-        return runCatching {
-            val field = this::class.java.getDeclaredField("dataOriginFilter")
-            field.trySetAccessible()
-            @Suppress("UNCHECKED_CAST")
-            val origins = field.get(this) as Set<DataOrigin>
-            origins.map { it.packageName }.toSet()
-        }.getOrDefault(emptySet())
+        return aggregateGroupByPeriodResponses[request] ?: aggregateGroupByPeriodResponse
     }
 
     override suspend fun insertRecords(records: List<Record>) =
