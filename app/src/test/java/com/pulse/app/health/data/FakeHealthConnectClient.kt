@@ -105,6 +105,6 @@ class FakeHealthConnectClient : HealthConnectClient {
     override suspend fun getChangesToken(request: ChangesTokenRequest): String =
         throw NotImplementedError()
 
-    override suspend fun getChanges(token: String): ChangesResponse =
+    override suspend fun getChanges(changesToken: String): ChangesResponse =
         throw NotImplementedError()
 }
