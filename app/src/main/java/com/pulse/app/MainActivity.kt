@@ -22,6 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.health.connect.client.HealthConnectClient
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.pulse.app.health.data.HealthConnectDataRepository
 import com.pulse.app.health.data.cache.RoomHealthDataCache
@@ -78,13 +79,17 @@ class MainActivity : ComponentActivity() {
         }
 
         if ((applicationContext.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
+            val client = when (HealthConnectClient.getSdkStatus(applicationContext)) {
+                HealthConnectClient.SDK_AVAILABLE -> HealthConnectClient.getOrCreate(applicationContext)
+                else -> null
+            }
             val cache = RoomHealthDataCache(applicationContext)
-            val repository = HealthConnectDataRepository(applicationContext, cache)
+            val repository = HealthConnectDataRepository(applicationContext, cache, client)
             debugHealthDataCache = cache
             SleepDebugVerification.trigger(this, repository)
             HeartRateDebugVerification.trigger(this, repository)
             StepsDebugVerification.trigger(this, repository)
-            HydrationDebugVerification.trigger(this, repository)
+            HydrationDebugVerification.trigger(this, repository, client, permissionManager)
         }
     }
 

@@ -1,7 +1,9 @@
 package com.pulse.app.debug
 
 import androidx.activity.ComponentActivity
+import androidx.health.connect.client.HealthConnectClient
 import com.pulse.app.health.data.HealthConnectDataRepository
+import com.pulse.app.health.permission.HealthConnectPermissionManager
 
 /**
  * Release no-op counterpart of [HydrationDebugVerification]. Keeps the
@@ -9,5 +11,10 @@ import com.pulse.app.health.data.HealthConnectDataRepository
  * behavior is completely absent from release builds.
  */
 internal object HydrationDebugVerification {
-    fun trigger(activity: ComponentActivity, repository: HealthConnectDataRepository) = Unit
+    fun trigger(
+        activity: ComponentActivity,
+        repository: HealthConnectDataRepository,
+        client: HealthConnectClient?,
+        permissionManager: HealthConnectPermissionManager?,
+    ) = Unit
 }
