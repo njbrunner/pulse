@@ -1,4 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Pulse</string>
+    <string name="widget_name">Pulse Daily</string>
+    <string name="widget_loading">Pulse</string>
+    <string name="widget_unavailable">--</string>
+    <string name="widget_label_sleep">Sleep</string>
+    <string name="widget_label_pulse_sleep">Pulse Sleep</string>
+    <string name="widget_label_pulse_recovery">Pulse Recovery</string>
+    <string name="widget_label_steps">Steps</string>
+    <string name="widget_label_resting_heart_rate">Resting HR</string>
+    <string name="widget_label_water">Water</string>
 </resources>
