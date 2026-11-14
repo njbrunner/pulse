@@ -108,6 +108,79 @@ class PersonalBaselineCalculatorTest {
     }
 
     @Test
+    fun exactly14Observations_succeeds() {
+        val history = (1..14).map { daysAgo ->
+            HeartRateVariability(
+                date = today.minusDays(daysAgo.toLong()),
+                ms = 50,
+            )
+        }
+
+        val baseline = PersonalBaselineCalculator.calculateHeartRateVariabilityBaseline(
+            history = history,
+            today = today,
+            windowDays = 28,
+            minimumHistoryDays = 14,
+        )
+
+        assertNotNull(baseline)
+        assertEquals(14, baseline!!.valuesInWindow)
+        assertTrue(baseline.hasEnoughHistory)
+    }
+
+    @Test
+    fun exactly13Observations_fails() {
+        val history = (1..13).map { daysAgo ->
+            HeartRateVariability(
+                date = today.minusDays(daysAgo.toLong()),
+                ms = 50,
+            )
+        }
+
+        val baseline = PersonalBaselineCalculator.calculateHeartRateVariabilityBaseline(
+            history = history,
+            today = today,
+            windowDays = 28,
+            minimumHistoryDays = 14,
+        )
+
+        assertNull(baseline)
+    }
+
+    @Test
+    fun exactly28DaysAgoIsIncluded() {
+        val history = listOf(
+            HeartRateVariability(date = today.minusDays(28), ms = 50),
+        )
+
+        val baseline = PersonalBaselineCalculator.calculateHeartRateVariabilityBaseline(
+            history = history,
+            today = today,
+            windowDays = 28,
+            minimumHistoryDays = 1,
+        )
+
+        assertNotNull(baseline)
+        assertEquals(1, baseline!!.valuesInWindow)
+    }
+
+    @Test
+    fun exactly29DaysAgoIsExcluded() {
+        val history = listOf(
+            HeartRateVariability(date = today.minusDays(29), ms = 50),
+        )
+
+        val baseline = PersonalBaselineCalculator.calculateHeartRateVariabilityBaseline(
+            history = history,
+            today = today,
+            windowDays = 28,
+            minimumHistoryDays = 1,
+        )
+
+        assertNull(baseline)
+    }
+
+    @Test
     fun insufficientHistory_returnsNull() {
         val history = listOf(
             HeartRateVariability(date = today.minusDays(1), ms = 50),

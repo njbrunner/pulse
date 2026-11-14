@@ -11,157 +11,188 @@ class PulseRecoveryScoreCalculatorTest {
 
     private val date = LocalDate.of(2026, 10, 28)
 
-    @Test
-    fun allMetricsAtBaselineWithPerfectSleep_scores100() {
-        val result = calculate(
-            hrvMs = 50,
-            hrvBaselineMs = 50.0,
-            restingHeartRateBpm = 60,
-            restingHeartRateBaselineBpm = 60.0,
-            sleepScoreTotal = 100,
-        )
-
-        assertAvailable(result) {
-            assertEquals(100, it.hrvComponent)
-            assertEquals(100, it.restingHeartRateComponent)
-            assertEquals(100, it.sleepScoreComponent)
-            assertEquals(100, it.totalScore)
-        }
-    }
+    // region Representative scenarios
 
     @Test
-    fun hrvBelowBaseline_reducesScore() {
+    fun normalRecovery_scoresAround77() {
         val result = calculate(
-            hrvMs = 40,
-            hrvBaselineMs = 50.0,
-            restingHeartRateBpm = 60,
-            restingHeartRateBaselineBpm = 60.0,
-            sleepScoreTotal = 100,
-        )
-
-        assertAvailable(result) {
-            // 40 / 50 = 0.8 -> 80
-            assertEquals(80, it.hrvComponent)
-            assertEquals(100, it.restingHeartRateComponent)
-            assertEquals(100, it.sleepScoreComponent)
-            // 80 * 0.40 + 100 * 0.30 + 100 * 0.30 = 32 + 30 + 30 = 92
-            assertEquals(92, it.totalScore)
-        }
-    }
-
-    @Test
-    fun restingHeartRateAboveBaseline_reducesScore() {
-        val result = calculate(
-            hrvMs = 50,
-            hrvBaselineMs = 50.0,
-            restingHeartRateBpm = 72,
-            restingHeartRateBaselineBpm = 60.0,
-            sleepScoreTotal = 100,
-        )
-
-        assertAvailable(result) {
-            assertEquals(100, it.hrvComponent)
-            // 60 / 72 = 0.8333 -> 83
-            assertEquals(83, it.restingHeartRateComponent)
-            assertEquals(100, it.sleepScoreComponent)
-            // 100 * 0.40 + 83 * 0.30 + 100 * 0.30 = 40 + 24.9 + 30 = 94.9 -> 95
-            assertEquals(95, it.totalScore)
-        }
-    }
-
-    @Test
-    fun lowerRestingHeartRateContributesPositively() {
-        val result = calculate(
-            hrvMs = 50,
-            hrvBaselineMs = 50.0,
+            hrvMs = 55,
+            hrvBaselineMs = 55.0,
             restingHeartRateBpm = 48,
-            restingHeartRateBaselineBpm = 60.0,
-            sleepScoreTotal = 100,
+            restingHeartRateBaselineBpm = 48.0,
+            sleepScoreTotal = 80,
         )
 
         assertAvailable(result) {
-            assertEquals(100, it.hrvComponent)
-            // 60 / 48 = 1.25 -> 125 -> capped at 100
-            assertEquals(100, it.restingHeartRateComponent)
-            assertEquals(100, it.totalScore)
+            assertEquals(75, it.hrvComponent)
+            assertEquals(75, it.restingHeartRateComponent)
+            assertEquals(80, it.sleepScoreComponent)
+            assertEquals(77, it.totalScore)
         }
     }
 
     @Test
-    fun higherHrvContributesPositively() {
+    fun strongRecovery_scoresAround91() {
         val result = calculate(
             hrvMs = 65,
-            hrvBaselineMs = 50.0,
-            restingHeartRateBpm = 60,
-            restingHeartRateBaselineBpm = 60.0,
-            sleepScoreTotal = 100,
+            hrvBaselineMs = 55.0,
+            restingHeartRateBpm = 44,
+            restingHeartRateBaselineBpm = 48.0,
+            sleepScoreTotal = 90,
         )
 
         assertAvailable(result) {
-            // 65 / 50 = 1.3 -> 130 -> capped at 100
-            assertEquals(100, it.hrvComponent)
-            assertEquals(100, it.restingHeartRateComponent)
-            assertEquals(100, it.totalScore)
+            assertEquals(93, it.hrvComponent)
+            assertEquals(89, it.restingHeartRateComponent)
+            assertEquals(90, it.sleepScoreComponent)
+            assertEquals(91, it.totalScore)
         }
     }
 
     @Test
-    fun weightingAppliesComponentScores() {
+    fun poorRecovery_scoresInUpper30s() {
         val result = calculate(
-            hrvMs = 50,
-            hrvBaselineMs = 50.0,
-            restingHeartRateBpm = 60,
-            restingHeartRateBaselineBpm = 60.0,
+            hrvMs = 40,
+            hrvBaselineMs = 55.0,
+            restingHeartRateBpm = 55,
+            restingHeartRateBaselineBpm = 48.0,
+            sleepScoreTotal = 60,
+        )
+
+        assertAvailable(result) {
+            assertEquals(25, it.hrvComponent)
+            assertEquals(32, it.restingHeartRateComponent)
+            assertEquals(60, it.sleepScoreComponent)
+            assertEquals(38, it.totalScore)
+        }
+    }
+
+    @Test
+    fun goodSleepPoorPhysiology_scoresInUpper40s() {
+        val result = calculate(
+            hrvMs = 40,
+            hrvBaselineMs = 55.0,
+            restingHeartRateBpm = 55,
+            restingHeartRateBaselineBpm = 48.0,
+            sleepScoreTotal = 95,
+        )
+
+        assertAvailable(result) {
+            assertEquals(25, it.hrvComponent)
+            assertEquals(32, it.restingHeartRateComponent)
+            assertEquals(95, it.sleepScoreComponent)
+            assertEquals(48, it.totalScore)
+        }
+    }
+
+    @Test
+    fun poorSleepStrongPhysiology_scoresAround79() {
+        val result = calculate(
+            hrvMs = 65,
+            hrvBaselineMs = 55.0,
+            restingHeartRateBpm = 44,
+            restingHeartRateBaselineBpm = 48.0,
             sleepScoreTotal = 50,
         )
 
         assertAvailable(result) {
-            // 100 * 0.40 + 100 * 0.30 + 50 * 0.30 = 40 + 30 + 15 = 85
-            assertEquals(85, it.totalScore)
+            assertEquals(93, it.hrvComponent)
+            assertEquals(89, it.restingHeartRateComponent)
+            assertEquals(50, it.sleepScoreComponent)
+            assertEquals(79, it.totalScore)
         }
+    }
+
+    // endregion
+
+    // region HRV component curve
+
+    @Test
+    fun hrvComponentAtEachAnchor() {
+        val baseline = 50.0
+        assertEquals(20, hrvComponent(35, baseline))
+        assertEquals(40, hrvComponent(40, baseline))
+        assertEquals(60, hrvComponent(45, baseline))
+        assertEquals(75, hrvComponent(50, baseline))
+        assertEquals(85, hrvComponent(55, baseline))
+        assertEquals(95, hrvComponent(60, baseline))
+        assertEquals(100, hrvComponent(65, baseline))
     }
 
     @Test
-    fun totalScoreRoundsToNearestInteger() {
-        val result = calculate(
-            hrvMs = 47,
-            hrvBaselineMs = 50.0,
-            restingHeartRateBpm = 63,
-            restingHeartRateBaselineBpm = 60.0,
-            sleepScoreTotal = 73,
-        )
+    fun hrvComponentInterpolatesBetweenAnchors() {
+        // Baseline 50; HRV 42 is -16% deviation, between -20% (40) and -10% (60).
+        assertEquals(48, hrvComponent(42, 50.0))
 
-        assertAvailable(result) {
-            // hrv: 47 / 50 = 0.94 -> 94
-            assertEquals(94, it.hrvComponent)
-            // rhr: 60 / 63 = 0.9523 -> 95
-            assertEquals(95, it.restingHeartRateComponent)
-            // sleep: 73
-            assertEquals(73, it.sleepScoreComponent)
-            // 94 * 0.40 + 95 * 0.30 + 73 * 0.30 = 37.6 + 28.5 + 21.9 = 88.0
-            assertEquals(88, it.totalScore)
-        }
+        // Baseline 50; HRV 58 is +16% deviation, between +10% (85) and +20% (95).
+        assertEquals(91, hrvComponent(58, 50.0))
     }
 
     @Test
-    fun minimumInputs_produceZeroScore() {
-        val result = calculate(
-            hrvMs = 1,
-            hrvBaselineMs = 100.0,
-            restingHeartRateBpm = 300,
-            restingHeartRateBaselineBpm = 1.0,
-            sleepScoreTotal = 0,
-        )
-
-        assertAvailable(result) {
-            assertEquals(1, it.hrvComponent)
-            // 1 / 300 = 0.0033 -> 0
-            assertEquals(0, it.restingHeartRateComponent)
-            assertEquals(0, it.sleepScoreComponent)
-            // 1 * 0.40 + 0 * 0.30 + 0 * 0.30 = 0.4 -> 0
-            assertEquals(0, it.totalScore)
-        }
+    fun hrvComponentBelowNegative30PercentClampsTo20() {
+        assertEquals(20, hrvComponent(30, 50.0))
+        assertEquals(20, hrvComponent(1, 50.0))
     }
+
+    @Test
+    fun hrvComponentAbovePositive30PercentClampsTo100() {
+        assertEquals(100, hrvComponent(70, 50.0))
+        assertEquals(100, hrvComponent(100, 50.0))
+    }
+
+    @Test
+    fun hrvComponentExactlyBaseline_returns75() {
+        assertEquals(75, hrvComponent(55, 55.0))
+    }
+
+    // endregion
+
+    // region Resting heart rate component curve
+
+    @Test
+    fun restingHeartRateComponentAtEachAnchor() {
+        val baseline = 60.0
+        assertEquals(100, restingHeartRateComponent(52, baseline))
+        assertEquals(92, restingHeartRateComponent(55, baseline))
+        assertEquals(82, restingHeartRateComponent(58, baseline))
+        assertEquals(75, restingHeartRateComponent(60, baseline))
+        assertEquals(65, restingHeartRateComponent(62, baseline))
+        assertEquals(45, restingHeartRateComponent(65, baseline))
+        assertEquals(25, restingHeartRateComponent(68, baseline))
+        assertEquals(0, restingHeartRateComponent(72, baseline))
+    }
+
+    @Test
+    fun restingHeartRateComponentInterpolatesBetweenAnchors() {
+        // Baseline 60; RHR 63 is +3 bpm, between +2 (65) and +5 (45).
+        assertEquals(58, restingHeartRateComponent(63, 60.0))
+
+        // Baseline 60; RHR 59 is -1 bpm, between -2 (82) and 0 (75).
+        assertEquals(79, restingHeartRateComponent(59, 60.0))
+    }
+
+    @Test
+    fun restingHeartRateComponentAtOrBelowNegative8BpmClampsTo100() {
+        assertEquals(100, restingHeartRateComponent(52, 60.0))
+        assertEquals(100, restingHeartRateComponent(48, 60.0))
+        assertEquals(100, restingHeartRateComponent(1, 60.0))
+    }
+
+    @Test
+    fun restingHeartRateComponentAtOrAbovePositive12BpmClampsTo0() {
+        assertEquals(0, restingHeartRateComponent(72, 60.0))
+        assertEquals(0, restingHeartRateComponent(80, 60.0))
+        assertEquals(0, restingHeartRateComponent(200, 60.0))
+    }
+
+    @Test
+    fun restingHeartRateComponentExactlyBaseline_returns75() {
+        assertEquals(75, restingHeartRateComponent(48, 48.0))
+    }
+
+    // endregion
+
+    // region Availability and validation
 
     @Test
     fun missingHrv_returnsUnavailable() {
@@ -302,6 +333,64 @@ class PulseRecoveryScoreCalculatorTest {
         assertUnavailable(result)
     }
 
+    @Test
+    fun nonFiniteHrvBaseline_returnsUnavailable() {
+        assertUnavailable(calculateWithBaselineValues(
+            hrvBaselineMs = Double.NaN,
+            restingHeartRateBaselineBpm = 60.0,
+        ))
+        assertUnavailable(calculateWithBaselineValues(
+            hrvBaselineMs = Double.POSITIVE_INFINITY,
+            restingHeartRateBaselineBpm = 60.0,
+        ))
+        assertUnavailable(calculateWithBaselineValues(
+            hrvBaselineMs = Double.NEGATIVE_INFINITY,
+            restingHeartRateBaselineBpm = 60.0,
+        ))
+    }
+
+    @Test
+    fun nonFiniteRestingHeartRateBaseline_returnsUnavailable() {
+        assertUnavailable(calculateWithBaselineValues(
+            hrvBaselineMs = 50.0,
+            restingHeartRateBaselineBpm = Double.NaN,
+        ))
+        assertUnavailable(calculateWithBaselineValues(
+            hrvBaselineMs = 50.0,
+            restingHeartRateBaselineBpm = Double.POSITIVE_INFINITY,
+        ))
+        assertUnavailable(calculateWithBaselineValues(
+            hrvBaselineMs = 50.0,
+            restingHeartRateBaselineBpm = Double.NEGATIVE_INFINITY,
+        ))
+    }
+
+    // endregion
+
+    // region Helpers
+
+    private fun hrvComponent(hrvMs: Int, baselineMs: Double): Int {
+        val result = calculate(
+            hrvMs = hrvMs,
+            hrvBaselineMs = baselineMs,
+            restingHeartRateBpm = 60,
+            restingHeartRateBaselineBpm = 60.0,
+            sleepScoreTotal = 100,
+        )
+        return (result as RecoveryScoreResult.Available).score.hrvComponent
+    }
+
+    private fun restingHeartRateComponent(bpm: Int, baselineBpm: Double): Int {
+        val result = calculate(
+            hrvMs = 50,
+            hrvBaselineMs = 50.0,
+            restingHeartRateBpm = bpm,
+            restingHeartRateBaselineBpm = baselineBpm,
+            sleepScoreTotal = 100,
+        )
+        return (result as RecoveryScoreResult.Available).score.restingHeartRateComponent
+    }
+
     private fun calculate(
         hrvMs: Int?,
         hrvBaselineMs: Double?,
@@ -338,6 +427,31 @@ class PulseRecoveryScoreCalculatorTest {
         )
     }
 
+    private fun calculateWithBaselineValues(
+        hrvBaselineMs: Double,
+        restingHeartRateBaselineBpm: Double,
+    ): RecoveryScoreResult {
+        return PulseRecoveryScoreCalculator.calculate(
+            hrv = HeartRateVariability(date = date, ms = 50),
+            hrvBaseline = PersonalBaseline(
+                value = hrvBaselineMs,
+                windowDays = 28,
+                minimumHistoryDays = 14,
+                valuesInWindow = 14,
+            ),
+            restingHeartRate = RestingHeartRate(date = date, bpm = 60),
+            restingHeartRateBaseline = PersonalBaseline(
+                value = restingHeartRateBaselineBpm,
+                windowDays = 28,
+                minimumHistoryDays = 14,
+                valuesInWindow = 14,
+            ),
+            sleepScoreResult = SleepScoreResult.Available(
+                PulseSleepScore(100, 100, 100, 100)
+            ),
+        )
+    }
+
     private fun assertAvailable(
         result: RecoveryScoreResult,
         assertions: (PulseRecoveryScore) -> Unit,
@@ -352,4 +466,6 @@ class PulseRecoveryScoreCalculatorTest {
             result is RecoveryScoreResult.Unavailable,
         )
     }
+
+    // endregion
 }
