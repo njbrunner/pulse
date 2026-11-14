@@ -33,17 +33,22 @@ internal object HydrationDebugVerification {
                 "Triggering PulseHydrationDebug verification: today=$today, range=$rangeStart..$today",
             )
 
-            logToday(repository, today)
+            logSingleDate(repository, today, "Today")
+
+            val nov3 = LocalDate.of(2026, 11, 3)
+            logSingleDate(repository, nov3, "Nov 3")
+
             logRange(repository, rangeStart, today)
         }
     }
 
-    private suspend fun logToday(
+    private suspend fun logSingleDate(
         repository: HealthConnectDataRepository,
-        today: LocalDate,
+        date: LocalDate,
+        name: String,
     ) {
-        val label = "Today ($today)"
-        when (val result = repository.readHydration(today)) {
+        val label = "$name ($date)"
+        when (val result = repository.readHydration(date)) {
             is HealthDataResult.Success ->
                 Log.i(
                     TAG,
