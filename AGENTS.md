@@ -257,6 +257,19 @@ Do not ask for permission to perform normal Git workflow steps defined above.
 
 ---
 
+## Temporary Debug Verifiers
+
+The following debug-only verifiers are temporary and must be removed before the v0.1 release:
+
+- `PulseSleepDebug` / `SleepDebugVerification`
+- `PulseHeartDebug` / `HeartRateDebugVerification`
+- `PulseStepsDebug` / `StepsDebugVerification`
+- `PulseHydrationDebug` / `HydrationDebugVerification`
+
+They exist only to validate the production repository paths on physical devices. Do not rely on them in production code or tests.
+
+---
+
 ## Completion
 
 An issue is complete when:

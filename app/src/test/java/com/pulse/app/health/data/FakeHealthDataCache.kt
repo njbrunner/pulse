@@ -65,8 +65,17 @@ class FakeHealthDataCache : HealthDataCache {
         endDate: LocalDate,
     ): List<CachedValue<HeartRateVariability>> = emptyList()
 
-    override suspend fun saveHydration(data: HydrationSummary, syncedAt: Instant) = Unit
-    override suspend fun saveHydrationRange(data: List<HydrationSummary>, syncedAt: Instant) = Unit
+    val savedHydration = mutableListOf<Pair<HydrationSummary, Instant>>()
+    val savedHydrationRanges = mutableListOf<Pair<List<HydrationSummary>, Instant>>()
+
+    override suspend fun saveHydration(data: HydrationSummary, syncedAt: Instant) {
+        savedHydration.add(data to syncedAt)
+    }
+
+    override suspend fun saveHydrationRange(data: List<HydrationSummary>, syncedAt: Instant) {
+        savedHydrationRanges.add(data to syncedAt)
+    }
+
     override suspend fun getHydration(date: LocalDate): CachedValue<HydrationSummary>? = null
     override suspend fun getHydrationRange(
         startDate: LocalDate,
